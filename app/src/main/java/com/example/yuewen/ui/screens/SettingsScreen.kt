@@ -846,8 +846,9 @@ fun SettingsScreen(
                     trailing = { Switch(checked = glassUi, onCheckedChange = { vm.setGlassUi(it) }) }
                 )
                 Caption(
-                    "底栏、首页顶栏、闻件标签栏换成半透明 + 高光描边的玻璃质感。" +
-                        "关掉就退回原来的不透明样式。"
+                    "首页顶栏、闻件标签栏换成半透明 + 受光渐变的玻璃质感；关掉退回原来的实色。\n" +
+                        "底栏不在这里 —— 它按你的要求做成了「没有自己的底」，直接露出页面背景，" +
+                        "只留图标文字和高亮块，所以这个开关对它没有影响。"
                 )
                 Div()
                 // ---- v2.3：配色方案 ----
@@ -1003,8 +1004,13 @@ fun SettingsScreen(
                 )
                 Caption("关掉只是首页不再显示那一行，上面填的词会原样留着，随时可以再打开。")
                 Div()
-                // 选项按当前顶栏模式拼：
-                //   分类项只在顶栏显示分类时才有意义，阅源项同理 —— 免得选了不生效。
+                // ⚠️⚠️ v2.6.0 修：选项**不再按顶栏那两行的开关过滤**。
+                // 原写法是「分类行关着就不列分类项、阅源行关着就不列阅源项」，本意是「免得选了不生效」。
+                // 但如果两行都关掉（只用关键词筛，用户就是这么用的），整个 `options` 就是**空的** ——
+                // 点开下拉只剩右侧那个「全部」值，看着就是坏的（用户反馈「点了只有全部选项」）。
+                // 现在两级永远都列全：至少保证「全部（不限分类）」和「全部阅源」两项在，
+                // 而且订阅过的每个分类 / 每个源都能直接选。
+                // 代价是「选了不生效」的可能回来了 —— 这条改由下面那行 Caption 明确交代。
                 // 取值用带前缀的 key（"c:" / "s:"）区分两级 —— 分类名和阅源名可能重名，
                 // 光看字符串分不出用户点的是哪一级。
                 DropdownRow(
@@ -1013,14 +1019,10 @@ fun SettingsScreen(
                     expanded = defaultExpanded,
                     onExpandedChange = { defaultExpanded = it },
                     options = buildList {
-                        if (showCategoryRow) {
-                            add("c:推荐" to "全部（不限分类）")
-                            categories.forEach { add("c:$it" to it) }
-                        }
-                        if (showSourceRow) {
-                            add("s:" to "全部阅源")
-                            sources.filter { it.enabled }.map { it.name }.distinct().forEach { add("s:$it" to it) }
-                        }
+                        add("c:推荐" to "全部（不限分类）")
+                        categories.forEach { add("c:$it" to it) }
+                        add("s:" to "全部阅源")
+                        sources.filter { it.enabled }.map { it.name }.distinct().forEach { add("s:$it" to it) }
                     },
                     // 显示哪一级就以哪一级为准：阅源更「具体」，所以优先显示它
                     selectedKey = when {
@@ -1035,7 +1037,9 @@ fun SettingsScreen(
                 )
                 Caption(
                     "下次打开 App 时列表默认按这一项筛选。中途点了别的胶囊不影响这里 —— " +
-                        "这一项是「开机默认」，不是「记住上次」。"
+                        "这一项是「开机默认」，不是「记住上次」。\n" +
+                        "选项来自你订阅的源和它们的分类；如果上面「显示「分类」行 / 显示「阅源」行」是关着的，" +
+                        "对应那一级选了也不会生效，想用就先把它打开。"
                 )
 
                 // ---- v2.2：文章怎么排 ----

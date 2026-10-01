@@ -19,9 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.PagerState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -36,8 +33,8 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.yuewen.ui.navigation.Screen
@@ -78,7 +75,12 @@ private const val PILL_ANIM_MS = 280
  * ## v2.6 其它改动
  * - 加 `navigationBarsPadding()`：沉浸式之后底栏会压在手势条上，得让开；
  * - 底部外边距从 7dp 加到 13dp —— 用户反馈「整体再往上走一点」；
- * - 玻璃质感走 [GlassSurface]（和顶栏、标签栏共用同一份实现）。
+ * - 曾短暂用过 [GlassSurface] 的玻璃质感，v2.6.0 已按用户要求**整套撤掉**：
+ *   底栏现在没有任何自己的底（无填充 / 无描边 / 无投影），只留图标文字 + 高亮块。
+ *   因此本组件**不再接收 `glass` 参数** —— 玻璃开关只管首页顶栏和闻件标签栏。
+ * - 未读数从「图标右上角的悬浮徽标」改成**跟在文字后面的一小段数字**：
+ *   悬浮徽标会压在图标和文字上（`BadgedBox` 的徽标画在图标边界之外、且不参与布局，
+ *   所以下面的文字不知道要给它让位）。详见 [BarItem]。
  */
 @Composable
 fun YuewenBottomBar(
@@ -86,14 +88,10 @@ fun YuewenBottomBar(
     pagerState: PagerState,
     onSelect: (Screen) -> Unit,
     unreadCount: Int = 0,
-    glass: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val cs = MaterialTheme.colorScheme
     val n = items.size.coerceAtLeast(1)
-
-    // 深色判断：surface 亮度低于一半就是深色主题（比传参简单，也跟手势组件解耦）
-    val isDark = cs.surface.luminance() < 0.5f
 
     /**
      * 高亮块自己的位置（单位＝「第几格」，可以是 2.4 这种小数）。
@@ -138,14 +136,17 @@ fun YuewenBottomBar(
     // 计算一次即可，drawBehind 每帧会用
     val pillColor = cs.primary
 
-    GlassSurface(
-        glass = glass,
-        shape = CircleShape,
-        shadowElevation = if (isDark) 0.dp else 8.dp,
-        // ① 左右外边距：v1.8 曾误改成归零，胶囊通到屏幕两边反而不好看，保持 16dp；
-        // ② 内边距归零：高亮块直接贴着胶囊两端，不再空出一条窄带；
-        // ③ v2.6 底部 7dp → 13dp：整体上移一点；
-        // ④ v2.6 让开系统导航栏（沉浸式之后底栏会压在手势条上）。
+    // ---------------- v2.6.0：底栏不再有自己的底 ----------------
+    // 用户反馈「tab 栏那层灰色背景不要了，换成透明的」。查过截图确认：
+    // 那层底就是 [GlassSurface] 的半透明填充（0.76 alpha 叠在页面底色上，比四周深一档，
+    // 实测 (237,239,241) vs 页面 (245,247,249)）。
+    //
+    // 现在整条底栏**没有填充、没有描边、没有投影**，直接露出页面背景 ——
+    // 视觉上只剩「四个图标文字 + 蓝色高亮块」，高亮块自己就能说明当前在哪一页。
+    //
+    // 因此这里不再套 GlassSurface，也不再需要 CircleShape（没有底就无所谓外形）。
+    // 副作用：「液态玻璃」开关从此只作用于**首页顶栏**和**闻件标签栏**（设置页文案已同步）。
+    Box(
         modifier = modifier
             .fillMaxWidth()
             // ⚠️ 不是 `navigationBarsPadding()`：键盘弹起时导航栏躲在键盘后面，
@@ -158,12 +159,12 @@ fun YuewenBottomBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                // 胶囊直接用 drawBehind 画：能拿到 Row 的实测宽度，
+                // 高亮块直接用 drawBehind 画：能拿到 Row 的实测宽度，
                 // 每个槽位宽度 = 总宽 / 项数，不需要额外的测量布局。
                 .drawBehind {
                     // 绘制阶段读：滑行时只重绘这一层，不重组
                     val slot = size.width / n
-                    // 高亮块 = 整个槽位宽，两端与胶囊边缘严丝合缝
+                    // 高亮块 = 整个槽位宽，两端就是 Row 的左右边界
                     drawRoundRect(
                         color = pillColor,
                         topLeft = Offset(slot * pill.value, 0f),
@@ -177,7 +178,7 @@ fun YuewenBottomBar(
                 BarItem(
                     item = item,
                     // 传函数不传值：让读取发生在 BarItem 自己的组合作用域里，
-                    // 这样滑行时只失效那一个小格子，外层 Row / GlassSurface 照常跳过
+                    // 这样滑行时只失效那一个小格子，外层 Row 照常跳过
                     pillPosition = { pill.value },
                     index = index,
                     badge = if (item == Screen.Home) unreadCount else 0,
@@ -213,8 +214,10 @@ private fun BarItem(
     // 1 = 高亮块正落在这一项上，0 = 离得最远（相邻项之间的中间位置）
     val fraction = (1f - abs(pillPosition() - index)).coerceIn(0f, 1f)
     val tint = lerp(cs.onSurfaceVariant, cs.onPrimary, fraction)
+    // 未读数字的颜色跟高亮块一起插值：未选中时用 error 色（醒目），
+    // 选中时变成 onPrimary（白字压在主色胶囊上）。不再需要单独的「徽标文字色」，
+    // 因为数字现在是普通文字、直接坐在底栏底色上，不是坐在徽标圆点上。
     val badgeColor = lerp(cs.error, cs.onPrimary, fraction)
-    val badgeContent = lerp(cs.onError, cs.primary, fraction)
 
     // 常驻一个 InteractionSource：没有 indication 时它不会被消费，但传 null 会走默认 ripple
     val interaction = remember { MutableInteractionSource() }
@@ -238,29 +241,37 @@ private fun BarItem(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            BadgedBox(
-                badge = {
-                    if (badge > 0) {
-                        Badge(containerColor = badgeColor, contentColor = badgeContent) {
-                            Text(if (badge > 99) "99+" else "$badge", fontSize = 10.sp)
-                        }
-                    }
-                }
-            ) {
-                Icon(
-                    item.icon,
-                    contentDescription = item.label,
-                    tint = tint,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-            Spacer(Modifier.width(6.dp))
+            Icon(
+                item.icon,
+                contentDescription = item.label,
+                tint = tint,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(5.dp))
             Text(
                 item.label,
                 fontSize = 12.5.sp,
                 color = tint,
                 maxLines = 1
             )
+            // ---------------- v2.6.0：数字跟在文字后面，不再用悬浮徽标 ----------------
+            // 以前用 `BadgedBox` + `Badge`：徽标画在**图标边界的右上角之外**，
+            // 而且**完全不参与布局** —— 所以它自己不知道、旁边的文字也不知道要给它让位，
+            // 数字一长（比如 36）就直接压在图标和「首页」两个字上。用户反馈的就是这个。
+            //
+            // 改成普通文字排在标签后面：宽度由布局系统如实算进去，**从结构上不可能重叠**。
+            // 颜色用 badgeColor（未选中时 error 色，选中时变白），照旧醒目。
+            // 字号压到 10sp、前面只留 3dp —— 一个槽位约 80dp 宽，装得下「首页 99+」。
+            if (badge > 0) {
+                Spacer(Modifier.width(3.dp))
+                Text(
+                    if (badge > 99) "99+" else "$badge",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = badgeColor,
+                    maxLines = 1
+                )
+            }
         }
     }
 }

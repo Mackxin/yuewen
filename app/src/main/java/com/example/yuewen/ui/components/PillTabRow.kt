@@ -82,12 +82,17 @@ fun PillTabRow(
     // 深色判断：与底栏保持同一套规则（surface 亮度低于一半即深色）
     val isDark = cs.surface.luminance() < 0.5f
 
-    // v2.6：外壳换成 [GlassSurface] —— 底栏、顶栏、这里三处的玻璃质感必须是同一份实现，
+    // v2.6：外壳换成 [GlassSurface] —— 顶栏、这里两处的玻璃质感必须是同一份实现，
     // 各写一份迟早会走形（透明度差 2%、描边差 0.5dp，放在同屏里就很明显）。
+    // （底栏 v2.6.0 起已改成「没有自己的底」，不再走 GlassSurface。）
+    //
+    // ⚠️ `showBorder = false`：用户看到那圈 1dp 高光描边后明确要求去掉
+    //（「闻件顶部的切换栏那里也不要边框了」）。
     GlassSurface(
         glass = glass,
         shape = CircleShape,
         shadowElevation = if (isDark) 0.dp else 3.dp,
+        showBorder = false,
         modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
     ) {
         Row(

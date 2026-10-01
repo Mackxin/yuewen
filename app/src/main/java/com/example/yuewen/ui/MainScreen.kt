@@ -380,7 +380,8 @@ fun MainScreen() {
                     goTo(tab)
                 },
                 unreadCount = if (showUnreadBadge) unread else 0,
-                glass = glass,
+                // v2.6.0：底栏不再收 `glass` —— 它按用户要求做成了「没有自己的底」，
+                // 玻璃开关从此只管首页顶栏和闻件标签栏。
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }

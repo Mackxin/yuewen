@@ -76,6 +76,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.yuewen.YuewenApplication
@@ -195,13 +196,24 @@ fun HomeScreen(
         // 形状用矩形而不是胶囊：顶栏是贴边的，带圆角反而会露出底下的内容。
         // `statusBarsPadding` 折进 measure 里（而不是再套一层 Column）：
         // 这样量到的就是「含状态栏」的总高，正好等于列表要留的空白。
+        //
+        // ⚠️⚠️ v2.6.0 的坑：这个顶栏**必须画在列表之上**（`zIndex(1f)`）。
+        // 它是在 Box 里先于列表声明的，而 Compose 的绘制与命中测试都按**声明顺序的逆序**走 ——
+        // 于是列表画在了顶栏上面：
+        //   ① 往下滚一点，搬进列表第一项的筛选胶囊就**盖住**了「更新于 …前」那行副标题，
+        //      看着像「阅闻标题没有置顶了」；
+        //   ② 顶栏右侧那排图标（放大镜 / 多选 / 筛选 / 全标已读 / 布局 / 刷新）
+        //      的点击**全被列表吃掉**，按了没反应。
+        // 而不是把顶栏整段挪到列表后面 —— 那样 diff 太大，加个 `zIndex` 是等效且最小的修法。
         GlassSurface(
             glass = glass,
             shape = RectangleShape,
             // 关掉玻璃时用页面底色：v2.5 及以前的顶栏本来就是「和页面同色的一条」，
             // 不传的话会变成 surfaceContainer 色块，等于偷偷改了外观。
             solidColor = cs.background,
-            modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter)
+            // v2.6.0：用户要求去掉那圈 1dp 高光描边
+            showBorder = false,
+            modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter).zIndex(1f)
         ) {
             val measure = Modifier
                 .onGloballyPositioned { coords ->

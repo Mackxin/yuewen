@@ -35,6 +35,11 @@ import com.example.yuewen.ui.theme.Glass
  * @param solidColor 关掉玻璃时用的实色。**默认色**是 `surfaceContainer` 系（底栏 / 标签栏
  *   一直用的就是它）；首页顶栏传 `colorScheme.background`，
  *   因为它在 v2.5 及以前本来就是「和页面同色的一条」。
+ * @param showBorder 要不要那圈 1dp 高光描边。
+ *   ⚠️ v2.6.0 起**三处调用点全部传 false** —— 用户看到那圈白边后明确要求去掉
+ *   （「底部 tab 栏不需要边框了」「闻件顶部的切换栏那里也不要边框」「首页的顶部那里也不需要边框」）。
+ *   留着这个开关而不是直接删掉代码，是因为描边是「液态玻璃」这个设计语言的组成部分，
+ *   哪天想连着开关一起放出来，这里有现成的入口。
  */
 @Composable
 fun GlassSurface(
@@ -43,6 +48,7 @@ fun GlassSurface(
     modifier: Modifier = Modifier,
     shadowElevation: Dp = 0.dp,
     solidColor: Color = Color.Unspecified,
+    showBorder: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val cs = MaterialTheme.colorScheme
@@ -60,7 +66,7 @@ fun GlassSurface(
         else -> cs.surfaceContainer
     }
 
-    val border = if (glass) {
+    val border = if (glass && showBorder) {
         BorderStroke(Glass.STROKE_DP.dp, Color(Glass.white(Glass.strokeAlpha(dark))))
     } else null
 
