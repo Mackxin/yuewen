@@ -40,6 +40,7 @@ import com.example.yuewen.ui.theme.generateScheme
 import com.example.yuewen.ui.theme.relativeLuminance
 import com.example.yuewen.ui.theme.rgbToHsl
 import com.example.yuewen.ui.theme.seedFor
+import com.example.yuewen.ui.theme.Glass
 import com.example.yuewen.ui.util.HomeSortMode
 import com.example.yuewen.ui.util.TtsChunker
 import com.example.yuewen.ui.util.sortArticles
@@ -1067,6 +1068,45 @@ fun main() {
         HomeRows.showCategoryRow(null, "") && !HomeRows.showSourceRow(null, ""))
     check("25.12 默认档常量就是 category（和加这个功能之前的默认一致）",
         HomeRows.DEFAULT_CHIP_MODE == HomeRows.CHIP_MODE_CATEGORY)
+
+    // ==================== 26. 液态玻璃数值层（v2.6） ====================
+    println()
+    println("---- 26. 液态玻璃（Glass）----")
+
+    // ---- 透明度必须「透得有分寸」----
+    // 全透明 = 看不见底栏轮廓；太实 = 看不出玻璃。两头都是事故，所以钉住区间。
+    check("26.01 深色填充透明度在 0..1 之间（不能全透也不能全实）",
+        Glass.fillAlpha(true) > 0f && Glass.fillAlpha(true) < 1f)
+    check("26.02 浅色填充透明度也在 0..1 之间",
+        Glass.fillAlpha(false) > 0f && Glass.fillAlpha(false) < 1f)
+    check("26.03 深色比浅色更透（深底上透出来的层次更明显，同 alpha 会糊成一块灰）",
+        Glass.fillAlpha(true) < Glass.fillAlpha(false))
+    check("26.04 描边透明度在 0..1 之间",
+        Glass.strokeAlpha(true) in 0f..1f && Glass.strokeAlpha(false) in 0f..1f)
+    check("26.05 浅色底的描边必须比深色底更实，否则白底上看不见轮廓",
+        Glass.strokeAlpha(false) > Glass.strokeAlpha(true))
+    check("26.06 受光面高度比例落在 0..1（否则会画到框外或盖满整块）",
+        Glass.SHEEN_HEIGHT_RATIO > 0f && Glass.SHEEN_HEIGHT_RATIO < 1f)
+
+    // ---- withAlpha：只许动 alpha，绝不能碰 RGB ----
+    // 这是本组最关键的一条：alpha 用 shl 24 拼回去，一旦没夹取，
+    // 负数 / 大于 1 的输入会**溢出到相邻通道**，算出一种随机的颜色（而不是全透 / 全实）。
+    val baseArgb = 0xFF0E9F76L
+    check("26.07 withAlpha 保留 RGB 三个通道",
+        (Glass.withAlpha(baseArgb, 0.5f) and 0x00FFFFFFL) == 0x000E9F76L)
+    check("26.08 withAlpha 0.5 → alpha 通道 128",
+        Glass.alphaOf(Glass.withAlpha(baseArgb, 0.5f)) in 127..128)
+    check("26.09 withAlpha 1.0 → 完全不透明", Glass.alphaOf(Glass.withAlpha(baseArgb, 1f)) == 255)
+    check("26.10 withAlpha 0 → 完全透明", Glass.alphaOf(Glass.withAlpha(baseArgb, 0f)) == 0)
+    check("26.11 传负数被夹成 0，不会溢出到 RGB",
+        Glass.withAlpha(baseArgb, -3f) == (baseArgb and 0x00FFFFFFL))
+    check("26.12 传大于 1 被夹成 255，不会溢出到 RGB",
+        Glass.withAlpha(baseArgb, 9f) == (baseArgb or 0xFF000000L))
+
+    // ---- 白色高光 ----
+    check("26.13 white() = 纯白 + 给定 alpha",
+        (Glass.white(0.16f) and 0x00FFFFFFL) == 0x00FFFFFFL && Glass.alphaOf(Glass.white(0.16f)) == 41)
+    check("26.14 alphaOf 能还原出写进去的透明度", Glass.alphaOf(Glass.withAlpha(0xFF123456L, 0.62f)) == 158)
 
     println()
     println("==========================================")

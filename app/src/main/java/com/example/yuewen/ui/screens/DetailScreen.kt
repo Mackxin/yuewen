@@ -1,5 +1,6 @@
 package com.example.yuewen.ui.screens
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -61,6 +63,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -76,6 +79,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -83,6 +87,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -90,6 +95,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.view.WindowCompat
 import coil.compose.AsyncImage
 import com.example.yuewen.YuewenApplication
 import com.example.yuewen.data.model.Article
@@ -314,7 +320,22 @@ fun DetailScreen(
     var pendingCardArticle by remember { mutableStateOf<Article?>(null) }
     var footerInput by remember { mutableStateOf(ShareCard.DEFAULT_FOOTER) }
 
-    Column(modifier = Modifier.fillMaxSize().background(palette.background)) {
+    // ---------------- v2.6：状态栏图标跟着阅读底色翻 ----------------
+    // 沉浸式之后状态栏区域透出来的就是阅读器的底色。米黄纸感是**浅色底**，
+    // 深色主题下如果不把图标切成深色，就是「浅色图标压在米黄底上」，根本看不清。
+    // ReaderPalette 早就带了一个 onPaper 字段，但一直没人消费 —— 这里把它接上。
+    // 离开时恢复成跟随 App 主题（Theme 那边的 SideEffect 只有主题变化时才会再跑，
+    // 所以必须在这里手动还原）。
+    val view = LocalView.current
+    val appDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    DisposableEffect(palette.onPaper) {
+        val window = (view.context as? Activity)?.window
+        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
+        controller?.isAppearanceLightStatusBars = palette.onPaper
+        onDispose { controller?.isAppearanceLightStatusBars = !appDark }
+    }
+
+    Column(modifier = Modifier.fillMaxSize().background(palette.background).statusBarsPadding()) {
 
         // ---------------- 固定顶栏（不参与滚动，因此永远不会压住标题） ----------------
         Surface(color = palette.background, modifier = Modifier.fillMaxWidth()) {

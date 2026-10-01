@@ -3,6 +3,7 @@ package com.example.yuewen.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -32,7 +33,11 @@ private val WENJIAN_TABS = listOf("搜索", "收藏", "历史", "笔记")
  * 上次停留在哪一栏会记进 DataStore：切去别处再回来，不至于每次都跳回第一栏。
  */
 @Composable
-fun WenjianScreen(app: YuewenApplication, onOpenArticle: (String) -> Unit) {
+fun WenjianScreen(
+    app: YuewenApplication,
+    onOpenArticle: (String) -> Unit,
+    glass: Boolean = false
+) {
     val saved by app.settingsRepository.wenjianTabFlow.collectAsStateWithLifecycle(0)
     var tabIndex by remember { mutableIntStateOf(saved.coerceIn(0, WENJIAN_TABS.lastIndex)) }
     val scope = rememberCoroutineScope()
@@ -57,10 +62,15 @@ fun WenjianScreen(app: YuewenApplication, onOpenArticle: (String) -> Unit) {
     Column(modifier = Modifier.fillMaxSize().background(cs.background)) {
         // v2.2：从 Material 的 TabRow（底下一条指示线）换成和底栏同款的胶囊标签栏 ——
         // 一上一下两种完全不同的视觉语言摆在同一屏里太割裂了。
+        // v2.6：① 加 `statusBarsPadding()` —— 沉浸式之后窗口不再自动避让状态栏，
+        //         不补这一层标签会被状态栏压住；
+        //       ② 顺带把外壳换成玻璃，和底栏、首页顶栏统一。
         PillTabRow(
             items = tabs,
             selectedIndex = tabIndex,
-            onSelect = { select(it) }
+            onSelect = { select(it) },
+            glass = glass,
+            modifier = Modifier.statusBarsPadding()
         )
 
         when (tabIndex) {

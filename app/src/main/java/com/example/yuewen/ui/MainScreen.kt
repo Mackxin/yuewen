@@ -8,10 +8,18 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.exclude
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -60,12 +68,16 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 /**
- * 底部胶囊栏占用的高度。页面内容与阅读正文都要按这个留出空档，别被压住。
+ * 底部胶囊栏自身占用的高度（**不含系统导航栏**）。
  *
  * v1.9：胶囊本体 ≈ 34dp + 上下各 7dp 外边距 ≈ 48dp，BAR_INSET 从 70dp 收到 58dp。
  * v2.0：朗读悬浮条会临时叠在底栏之上，[MainScreen] 会在这个基础上再加一段高度。
+ * v2.6：底栏底部外边距 7 → 13dp（用户要求「整体再往上走一点」），58 → 64dp。
+ *
+ * ⚠️ 沉浸式之后，页面底部的实际留白 = `BAR_INSET + 导航栏 inset`，
+ * 所以要留空的地方一律用 [MainScreen] 里算好的 `contentInset`，别直接写这个常量。
  */
-private val BAR_INSET = 58.dp
+private val BAR_INSET = 64.dp
 
 /** 「正在朗读」悬浮条自身的高度（含上下留白），用于动态加大页面底部空隙。 */
 private val TTS_BAR_HEIGHT = 54.dp
@@ -76,6 +88,26 @@ fun MainScreen() {
     val app = context.applicationContext as YuewenApplication
     // 记住列表实例：原来每次重组都新建一份，白白带着底栏一起重组
     val tabs = remember { Screen.bottomTabs() }
+
+    // v2.6：液态玻璃开关（设置 → 外观）。底栏 / 首页顶栏 / 闻件标签栏共用这一个标志。
+    val glass by app.settingsRepository.glassUiFlow.collectAsStateWithLifecycle(true)
+
+    /**
+     * v2.6：系统导航栏的高度（键盘弹起时算 0）。
+     *
+     * 沉浸式之后窗口是「铺满整屏」的，底栏会被手势条压住，所以：
+     * ① 底栏自己让开这一段；
+     * ② 页面内容底部要留出的空档也得跟着加上，否则最后一条会被底栏盖掉。
+     *
+     * ⚠️ 为什么是 `exclude(WindowInsets.ime)`：根节点已经套了 `imePadding()`，
+     * 键盘弹起时整块内容已经按键盘高度上移过一次了；而导航栏此时正躲在键盘后面，
+     * 系统却仍然会报出它的高度。不排除掉的话，底栏会**在键盘上方再多浮一截**
+     * （手势条 24~48dp），看着像没对齐。
+     */
+    val navBarInset = WindowInsets.navigationBars
+        .exclude(WindowInsets.ime)
+        .asPaddingValues()
+        .calculateBottomPadding()
     var detailLink by remember { mutableStateOf<String?>(null) }
     var showAddSource by remember { mutableStateOf(false) }
     var showRssHub by remember { mutableStateOf(false) }
@@ -164,7 +196,7 @@ fun MainScreen() {
      * 人已经在文章里的时候不需要这条，白占地方。
      */
     val showTtsBar = ttsSpeaking && !ttsLink.isNullOrBlank() && detailLink != ttsLink
-    val contentInset = BAR_INSET + if (showTtsBar) TTS_BAR_HEIGHT else 0.dp
+    val contentInset = BAR_INSET + navBarInset + if (showTtsBar) TTS_BAR_HEIGHT else 0.dp
 
     /**
      * 关闭阅读浮层。
@@ -217,7 +249,22 @@ fun MainScreen() {
     // （拖动时跟手，不会等停下来才跳）；而「当前在哪一页」现在也直接派生自 pagerState。
     // 谁都不需要回写谁，就没有动画被打断时来回弹跳的余地了。
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    /**
+     * v2.6：沉浸式（edge-to-edge）。
+     *
+     * - `background(...)` 写在 `imePadding()` **之前**：修饰符是从左往右包，
+     *   背景属于「外层」，所以它铺满的是整屏（含状态栏 / 导航栏区域）；
+     *   而 padding 只影响里层内容。这样一条链同时做到「背景铺满」和「键盘弹起时内容上移」，
+     *   不用再套一层 Box、也就不必把下面一百多行重新缩进。
+     * - 系统栏在 MainActivity 里被设成透明，那两条区域透出来的就是这一层背景色 ——
+     *   这也是「底部白条」的根治：以前那里没有任何东西覆盖，露的是**窗口底色**。
+     */
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .imePadding()
+    ) {
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
@@ -231,15 +278,26 @@ fun MainScreen() {
             // 用 route（"home"/"wenjian"/…）这个稳定唯一字符串即可。
             key = { page -> tabs.getOrNull(page)?.route ?: "page_$page" }
         ) { page ->
-            Box(Modifier.fillMaxSize().padding(bottom = contentInset)) {
+            // v2.6：首页与闻件**自己**处理顶部留白 —— 它们要做「列表从状态栏下面穿过去」
+            // 的沉浸效果，所以不能在这里统一往下压。
+            // 其余页面（阅源 / 设置）在窗口里补一层状态栏留白：沉浸式之后窗口不再自动避让，
+            // 不补的话标题会被状态栏压住。
+            val immersive = tabs[page] == Screen.Home || tabs[page] == Screen.Wenjian
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(bottom = contentInset)
+                    .then(if (immersive) Modifier else Modifier.statusBarsPadding())
+            ) {
                 when (tabs[page]) {
                     Screen.Home -> HomeScreen(
                         app = app,
                         onOpenArticle = openArticle,
                         // v2.4：顶栏放大镜 → 全屏搜索浮层
-                        onOpenSearch = { showSearch = true }
+                        onOpenSearch = { showSearch = true },
+                        glass = glass
                     )
-                    Screen.Wenjian -> WenjianScreen(app = app, onOpenArticle = openArticle)
+                    Screen.Wenjian -> WenjianScreen(app = app, onOpenArticle = openArticle, glass = glass)
                     Screen.Sources -> SourcesScreen(
                         app = app,
                         onOpenAddSource = { showAddSource = true },
@@ -267,7 +325,13 @@ fun MainScreen() {
         // 这样「搜索 → 点结果看文章 → 返回」能退回搜索结果继续翻，
         // 同时底栏还在，用户随时可以点别的 Tab 走人（点 Tab 会顺手关掉它）。
         if (showSearch) {
-            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(bottom = contentInset)) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+                    .statusBarsPadding()
+                    .padding(bottom = contentInset)
+            ) {
                 SearchPane(
                     app = app,
                     onOpenArticle = openArticle,
@@ -296,7 +360,7 @@ fun MainScreen() {
                 onToggle = { app.tts.toggle() },
                 onOpen = { ttsLink?.let { detailLink = it } },
                 onStop = { app.tts.stop() },
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = BAR_INSET)
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = BAR_INSET + navBarInset)
             )
         }
 
@@ -316,30 +380,24 @@ fun MainScreen() {
                     goTo(tab)
                 },
                 unreadCount = if (showUnreadBadge) unread else 0,
+                glass = glass,
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
 
         // 全屏浮层：关于 / 添加阅源 / 阅读统计 / 缓存管理 / 新手指南（覆盖底栏，独立于 Pager）
-        if (showStats) {
-            StatsScreen(app = app, onBack = { showStats = false })
-        }
-        if (showStorage) {
-            StorageScreen(app = app, onBack = { showStorage = false })
-        }
-        if (showAbout) {
-            AboutScreen(app = app, onBack = { showAbout = false })
-        }
-        if (showGuide) {
-            GuideScreen(app = app, onBack = { showGuide = false })
-        }
-        if (showAddSource) {
-            AddSourceScreen(app = app, onBack = { showAddSource = false })
-        }
+        //
+        // v2.6：每层都套一个 `systemBarsPadding()` 的 Box —— 沉浸式之后窗口不再自动避让系统栏，
+        // 不补这一层的话浮层标题会被状态栏压住、底部的按钮会被手势条压住。
+        // 这些页面的底色本来就是 `colorScheme.background`，和根容器完全一致，
+        // 所以上下两条空出来的地方看不出接缝。
+        if (showStats) Box(Modifier.systemBarsPadding()) { StatsScreen(app = app, onBack = { showStats = false }) }
+        if (showStorage) Box(Modifier.systemBarsPadding()) { StorageScreen(app = app, onBack = { showStorage = false }) }
+        if (showAbout) Box(Modifier.systemBarsPadding()) { AboutScreen(app = app, onBack = { showAbout = false }) }
+        if (showGuide) Box(Modifier.systemBarsPadding()) { GuideScreen(app = app, onBack = { showGuide = false }) }
+        if (showAddSource) Box(Modifier.systemBarsPadding()) { AddSourceScreen(app = app, onBack = { showAddSource = false }) }
         // 放在最后 = 画在最上层；从「添加阅源」页里也能进 RSSHub 而不被盖住
-        if (showRssHub) {
-            RssHubScreen(app = app, onBack = { showRssHub = false })
-        }
+        if (showRssHub) Box(Modifier.systemBarsPadding()) { RssHubScreen(app = app, onBack = { showRssHub = false }) }
     }
 }
 

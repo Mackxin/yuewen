@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -62,6 +63,23 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        /**
+         * v2.6：沉浸式（edge-to-edge）。
+         *
+         * 干的事就一件：**让 App 的画面铺满整块屏幕**，包括状态栏与导航栏那两条区域。
+         * 关掉系统自动避让（`decorFitsSystemWindows = false`）之后，那两条区域不再由系统上色，
+         * 而是透出 App 自己画的背景 —— 于是「状态栏和内容浑然一体」，
+         * 冷启动和切换主题时也不会再闪一条异色带。
+         *
+         * 代价是**所有**系统栏留白都得自己补，不能像以前那样白拿：
+         * 见 `MainScreen`（页面 / 浮层）、`HomeScreen`（列表从顶栏下穿过）、
+         * `DetailScreen`（阅读器状态栏图标跟着纸感底色翻）。
+         * 输入法也归到这里管：`MainScreen` 根节点套了 `imePadding()`，
+         * 顶掉以前 `adjustResize` 的效果，输入框不会被键盘盖住。
+         */
+        enableEdgeToEdge()
+
         handleOpenRequest(intent)
         askNotificationPermission()
 

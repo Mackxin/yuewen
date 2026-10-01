@@ -12,11 +12,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -62,10 +66,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -79,12 +86,14 @@ import com.example.yuewen.ui.components.ArticleCard
 import com.example.yuewen.ui.components.ArticleListMode
 import com.example.yuewen.ui.components.EmptyState
 import com.example.yuewen.ui.components.FolderPickerDialog
+import com.example.yuewen.ui.components.GlassSurface
 import com.example.yuewen.ui.util.BrowserLauncher
 import com.example.yuewen.ui.util.formatRelativeTime
 import com.example.yuewen.ui.util.titleOrDefault
 import com.example.yuewen.ui.viewmodel.HomeRow
 import com.example.yuewen.ui.viewmodel.HomeViewModel
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 /**
  * 首页信息流（v2.0，v2.4 起顶栏多了搜索入口 + 关键词胶囊）。
@@ -96,13 +105,19 @@ import kotlinx.coroutines.launch
  * 4. v2.4：顶栏最前面加了**放大镜**，点开直接搜索（原来得先切到「闻件」）；
  *    订阅源行下面多了**关键词胶囊**（设置里自己填「手机」「汽车」这类词），
  *    点一下首页就只看含这个词的文章。
+ * 5. v2.6：**沉浸式**。顶栏从「占位的一行」变成**悬浮在列表之上的一层玻璃**，
+ *    列表从屏幕最顶端开始画、顶部留白 = 状态栏 + 顶栏高度 ——
+ *    往上滚的时候文章会从玻璃顶栏和状态栏下面穿过去。
+ *    筛选胶囊行顺势搬进列表（变成第一项），跟着一起滚走，
+ *    滚回顶部它就在，不再常驻占掉一屏最贵的位置。
  */
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 fun HomeScreen(
     app: YuewenApplication,
     onOpenArticle: (String) -> Unit,
-    onOpenSearch: () -> Unit = {}
+    onOpenSearch: () -> Unit = {},
+    glass: Boolean = false
 ) {
     val vm: HomeViewModel = viewModel(factory = HomeViewModel.provide(app))
     val categories by vm.categories.collectAsStateWithLifecycle()
@@ -166,7 +181,36 @@ fun HomeScreen(
     LaunchedEffect(selectionMode) { if (!selectionMode) selectedLinks = emptySet() }
 
     Box(modifier = Modifier.fillMaxSize().background(cs.background)) {
-        Column(modifier = Modifier.fillMaxSize()) {
+
+        // ---------------- v2.6：沉浸式的尺寸 ----------------
+        // 列表顶部要留白多少，取决于「状态栏 + 顶栏」到底多高。
+        // 顶栏高度没法写死：标题字数、副标题开不开、右上角挂几个图标，都会改它。
+        // 所以布局一帧后量一次（量的是**整条顶栏**，含状态栏留白），
+        // 偏差超过半 dp 才回写，避免每帧都触发一次无谓的重组。
+        val density = LocalDensity.current
+        val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+        var topBarTotal by remember { mutableStateOf(statusBarTop + 70.dp) }
+        val listTop = topBarTotal
+
+        // ---------------- 顶栏：悬浮在列表之上的玻璃层 ----------------
+        // 形状用矩形而不是胶囊：顶栏是贴边的，带圆角反而会露出底下的内容。
+        // `statusBarsPadding` 折进 measure 里（而不是再套一层 Column）：
+        // 这样量到的就是「含状态栏」的总高，正好等于列表要留的空白。
+        GlassSurface(
+            glass = glass,
+            shape = RectangleShape,
+            // 关掉玻璃时用页面底色：v2.5 及以前的顶栏本来就是「和页面同色的一条」，
+            // 不传的话会变成 surfaceContainer 色块，等于偷偷改了外观。
+            solidColor = cs.background,
+            modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter)
+        ) {
+            val measure = Modifier
+                .onGloballyPositioned { coords ->
+                    val h = with(density) { coords.size.height.toDp() }
+                    // 用 .value 比：Dp 之间没有现成的 abs 重载，别硬套 Float 的那个
+                    if (h > 0.dp && abs(h.value - topBarTotal.value) > 0.5f) topBarTotal = h
+                }
+                .statusBarsPadding()
 
             // ---------------- 顶部标题栏 ----------------
             if (selectionMode) {
@@ -177,11 +221,12 @@ fun HomeScreen(
                     onClose = { exitSelection() },
                     onToggleAll = {
                         selectedLinks = if (selectedLinks.size >= allLinks.size) emptySet() else allLinks.toSet()
-                    }
+                    },
+                    modifier = measure
                 )
             } else {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 4.dp, top = 14.dp, bottom = 4.dp),
+                    modifier = measure.fillMaxWidth().padding(start = 18.dp, end = 4.dp, top = 14.dp, bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(
@@ -314,72 +359,88 @@ fun HomeScreen(
                     }
                 }
             }
+        }
 
-            // ---------------- 筛选胶囊（分类 / 阅源） ----------------
-            // v2.0.2：顶栏胶囊支持两种维度，具体显示哪些由「设置 → 外观 → 首页筛选」决定。
-            // 两个都显示时是**两级筛选**：上面选分类，下面选该分类里的阅源。
-            // v2.5：显隐判断直接落到两个独立开关上，VM 那边负责「关掉某行就清掉那一级的筛选」。
-            if (showCategoryRow) {
-                HomeChipRow(
-                    // 「推荐」在数据库里就是「不限分类」，胶囊上写成「全部」更好懂
-                    items = categories.map { if (it == "推荐") "全部" to it else it to it },
-                    selected = category,
-                    onSelect = vm::selectCategory
-                )
-            }
-            if (showSourceRow) {
-                // v2.0.3：当前就是「全部阅源」（根本没筛源）时，不再摆一个高亮的「全部阅源」胶囊 ——
-                // 没筛的时候它只是白占一格；一旦选了具体源，它才出现，作为「取消筛选、回到全部」的入口。
-                val srcNames = vm.sourceNamesFor(category, sources)
-                HomeChipRow(
-                    items = if (sourceFilter.isBlank()) srcNames.map { it to it }
-                            else listOf("全部阅源" to "") + srcNames.map { it to it },
-                    selected = sourceFilter,
-                    onSelect = vm::selectSource
-                )
-            }
-
-            // ---------------- v2.4：关键词胶囊 ----------------
-            // 和上面两行是**并列的第三种维度**（分类 / 阅源 / 关键词），三者可以叠加。
-            // 画法刻意跟前两行不一样（左边挂个标签图标 + 胶囊用三级色）：
-            // 三行都是「一排一模一样的胶囊」的话，用户根本分不清哪行是哪行。
-            if (showKeywords) {
-                HomeKeywordRow(
-                    keywords = keywords,
-                    selected = keyword,
-                    onSelect = vm::selectKeyword
-                )
-            }
-
-            // ---------------- 列表 ----------------
-            // v1.8：下拉刷新只保留「右上角刷新按钮」那一处动效 ——
-            // PullToRefreshBox 自带的那个圆形指示器会浮在列表上方（看起来很碍眼），
-            // 这里把 indicator 传成空实现。手势本身照旧可用，
-            // 转圈提示交给顶栏那个按钮（它和 isRefreshing 是同一份状态）。
-            val pullState = rememberPullToRefreshState()
-            PullToRefreshBox(
-                state = pullState,
-                isRefreshing = isRefreshing,
-                onRefresh = vm::refresh,
-                indicator = {},
-                modifier = Modifier.fillMaxSize()
-            ) {
+        // ---------------- 列表 ----------------
+        // v1.8：下拉刷新只保留「右上角刷新按钮」那一处动效 ——
+        // PullToRefreshBox 自带的那个圆形指示器会浮在列表上方（看起来很碍眼），
+        // 这里把 indicator 传成空实现。手势本身照旧可用，
+        // 转圈提示交给顶栏那个按钮（它和 isRefreshing 是同一份状态）。
+        //
+        // v2.6：列表从屏幕最顶端开始画（不再被顶栏挤下去），顶部留白改由 contentPadding 出。
+        // 这是「沉浸式」的关键一步 —— 内容往上滚时会从玻璃顶栏和状态栏下面穿过去。
+        val pullState = rememberPullToRefreshState()
+        PullToRefreshBox(
+            state = pullState,
+            isRefreshing = isRefreshing,
+            onRefresh = vm::refresh,
+            indicator = {},
+            modifier = Modifier.fillMaxSize()
+        ) {
                 if (rows.isEmpty()) {
-                    EmptyState(
-                        icon = Icons.Filled.RssFeed,
-                        title = if (isRefreshing) "正在获取内容…" else "这里还没有内容",
-                        subtitle = if (isRefreshing) {
-                            "首次刷新要同时抓取多个源，稍等几秒"
-                        } else {
-                            "点右上角 ↻ 或下拉刷新；\n也可以去「阅源 → 发现推荐」一键订阅精选源"
-                        }
-                    )
+                    // 空状态也要让开顶栏，否则文案会被玻璃顶栏压在下面
+                    Box(Modifier.fillMaxSize().padding(top = listTop)) {
+                        EmptyState(
+                            icon = Icons.Filled.RssFeed,
+                            title = if (isRefreshing) "正在获取内容…" else "这里还没有内容",
+                            subtitle = if (isRefreshing) {
+                                "首次刷新要同时抓取多个源，稍等几秒"
+                            } else {
+                                "点右上角 ↻ 或下拉刷新；\n也可以去「阅源 → 发现推荐」一键订阅精选源"
+                            }
+                        )
+                    }
                 } else {
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                        contentPadding = PaddingValues(top = 2.dp, bottom = 20.dp)
+                        // v2.6：顶部留白 = 状态栏 + 顶栏。内容因此会从顶栏和状态栏下面穿过去。
+                        contentPadding = PaddingValues(top = listTop + 2.dp, bottom = 20.dp)
                     ) {
+                        // ---------------- 筛选胶囊（分类 / 阅源 / 关键词）----------------
+                        // v2.6：整组从「常驻顶栏」搬进列表，变成**第一项**，跟着内容一起滚走。
+                        // 它们是筛选用的一次性操作，不该长期占着一屏里最贵的位置；
+                        // 滚回顶部（或双击标题回顶）它们就回来。
+                        if (showCategoryRow || showSourceRow || showKeywords) {
+                            item(key = "filters", contentType = "filters") {
+                                Column {
+                                    // v2.0.2：顶栏胶囊支持两种维度，具体显示哪些由「设置 → 外观 → 首页筛选」决定。
+                                    // 两个都显示时是**两级筛选**：上面选分类，下面选该分类里的阅源。
+                                    // v2.5：显隐判断直接落到两个独立开关上，VM 那边负责「关掉某行就清掉那一级的筛选」。
+                                    if (showCategoryRow) {
+                                        HomeChipRow(
+                                            // 「推荐」在数据库里就是「不限分类」，胶囊上写成「全部」更好懂
+                                            items = categories.map { if (it == "推荐") "全部" to it else it to it },
+                                            selected = category,
+                                            onSelect = vm::selectCategory
+                                        )
+                                    }
+                                    if (showSourceRow) {
+                                        // v2.0.3：当前就是「全部阅源」（根本没筛源）时，不再摆一个高亮的「全部阅源」胶囊 ——
+                                        // 没筛的时候它只是白占一格；一旦选了具体源，它才出现，作为「取消筛选、回到全部」的入口。
+                                        val srcNames = vm.sourceNamesFor(category, sources)
+                                        HomeChipRow(
+                                            items = if (sourceFilter.isBlank()) srcNames.map { it to it }
+                                                    else listOf("全部阅源" to "") + srcNames.map { it to it },
+                                            selected = sourceFilter,
+                                            onSelect = vm::selectSource
+                                        )
+                                    }
+
+                                    // ---------------- v2.4：关键词胶囊 ----------------
+                                    // 和上面两行是**并列的第三种维度**（分类 / 阅源 / 关键词），三者可以叠加。
+                                    // 画法刻意跟前两行不一样（左边挂个标签图标 + 胶囊用三级色）：
+                                    // 三行都是「一排一模一样的胶囊」的话，用户根本分不清哪行是哪行。
+                                    if (showKeywords) {
+                                        HomeKeywordRow(
+                                            keywords = keywords,
+                                            selected = keyword,
+                                            onSelect = vm::selectKeyword
+                                        )
+                                    }
+                                }
+                            }
+                        }
                         items(
                             items = rows,
                             key = { it.key },
@@ -436,7 +497,6 @@ fun HomeScreen(
                     }
                 }
             }
-        }
 
         // ---------------- v2.0：多选时的底部操作条（悬浮在底栏之上） ----------------
         if (selectionMode) {
@@ -548,11 +608,12 @@ private fun BatchTopBar(
     total: Int,
     allSelected: Boolean,
     onClose: () -> Unit,
-    onToggleAll: () -> Unit
+    onToggleAll: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val cs = MaterialTheme.colorScheme
     Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 6.dp, end = 8.dp, top = 10.dp, bottom = 6.dp),
+        modifier = modifier.fillMaxWidth().padding(start = 6.dp, end = 8.dp, top = 10.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(onClick = onClose) {
@@ -652,7 +713,9 @@ private fun HomeChipRow(
     Row(
         modifier = Modifier.fillMaxWidth()
             .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 14.dp, vertical = 3.dp),
+            // v2.6：左右留白 14 → 2dp。这一行现在住在 LazyColumn 里，
+            // 而 LazyColumn 自己已经有 12dp 水平内边距 —— 2 + 12 = 原来的 14，视觉不变。
+            .padding(horizontal = 2.dp, vertical = 3.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -690,7 +753,7 @@ private fun HomeKeywordRow(
         selectedLabelColor = cs.onTertiaryContainer
     )
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 3.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(

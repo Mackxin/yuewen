@@ -148,6 +148,14 @@ class SettingsViewModel(
     val homeShowSourceRow: StateFlow<Boolean> = settings.homeShowSourceRowFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
+    /**
+     * v2.6：液态玻璃开关。默认开 —— 这是本轮的主打视觉，装完就该看得见效果。
+     * ⚠️ 这里用 `WhileSubscribed` 是**安全**的：它只在设置页里被读，而设置页打开时必然在订阅。
+     * （对比 [sources] 那种「被别处同步读 `.value`」的情况就不能这么写。）
+     */
+    val glassUi: StateFlow<Boolean> = settings.glassUiFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
     /** 打开 App 时默认停在的分类（「推荐」= 全部）。 */
     val homeDefaultCategory: StateFlow<String> = settings.homeDefaultCategoryFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "推荐")
@@ -158,6 +166,7 @@ class SettingsViewModel(
 
     fun setHomeShowCategoryRow(v: Boolean) = viewModelScope.launch { settings.setHomeShowCategoryRow(v) }
     fun setHomeShowSourceRow(v: Boolean) = viewModelScope.launch { settings.setHomeShowSourceRow(v) }
+    fun setGlassUi(v: Boolean) = viewModelScope.launch { settings.setGlassUi(v) }
     fun setHomeDefaultCategory(v: String) = viewModelScope.launch { settings.setHomeDefaultCategory(v) }
     fun setHomeDefaultSource(v: String) = viewModelScope.launch { settings.setHomeDefaultSource(v) }
 

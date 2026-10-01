@@ -580,6 +580,8 @@ fun SettingsScreen(
     val homeShowLayout by vm.homeShowLayout.collectAsStateWithLifecycle()
     val homeShowRefresh by vm.homeShowRefresh.collectAsStateWithLifecycle()
     val homeShowSubtitle by vm.homeShowSubtitle.collectAsStateWithLifecycle()
+    // v2.6：液态玻璃开关
+    val glassUi by vm.glassUi.collectAsStateWithLifecycle()
     val ttsNotify by vm.ttsNotify.collectAsStateWithLifecycle()
     val guideSeen by vm.guideSeen.collectAsStateWithLifecycle()
     // v2.0.2 / v2.5：首页那两行筛选项各自的开关 + 打开时默认停在哪儿
@@ -837,6 +839,16 @@ fun SettingsScreen(
                         }
                     }
                 }
+                Div()
+                // ---- v2.6：液态玻璃 ----
+                SettingsRow(
+                    "液态玻璃",
+                    trailing = { Switch(checked = glassUi, onCheckedChange = { vm.setGlassUi(it) }) }
+                )
+                Caption(
+                    "底栏、首页顶栏、闻件标签栏换成半透明 + 高光描边的玻璃质感。" +
+                        "关掉就退回原来的不透明样式。"
+                )
                 Div()
                 // ---- v2.3：配色方案 ----
                 // 点一下立刻换色，不需要「应用」按钮（MainActivity 直接订阅这个值）。

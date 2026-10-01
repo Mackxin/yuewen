@@ -1,6 +1,8 @@
 package com.example.yuewen.ui.theme
 
 import android.app.Activity
+import android.graphics.drawable.ColorDrawable
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
@@ -10,7 +12,7 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -326,22 +328,36 @@ fun YuewenTheme(
         yuewenColorScheme(palette, customHue, customSat, darkTheme)
     }
 
-    // ---------------- 状态栏 / 导航栏 ----------------
+    // ---------------- 状态栏 / 导航栏 / 窗口底色 ----------------
     // v1.6.1：这两条以前是「透明 + 透出 M3 默认窗口底色」，视觉上就是顶部和底部各一条粉色带。
-    // 现在做两件事：
-    //   ① 把两条系统栏的底色刷成当前页面背景色 → 与内容区无缝，色带消失；
-    //   ② 图标亮暗跟着深浅主题翻转 → 深色底上不会出现「黑图标压黑底」看不见的情况。
+    //   当时的做法：把两条系统栏的底色刷成当前页面背景色 → 色带消失。
+    // v2.6：改成真正的沉浸式（`enableEdgeToEdge`，见 MainActivity），系统栏是**透明**的，
+    //   透出来的就是 App 自己铺的背景 —— 于是这里不再需要（也不该）去写
+    //   `statusBarColor` / `navigationBarColor`：那两个 API 在 Android 15 已废弃，
+    //   写了也会被透明覆盖，留着只会多两条弃用告警。
+    //
+    // 现在这里只管两件事：
+    // ① **窗口底色跟着「当前生效的配色」走**，而不是跟着系统深浅走。
+    //    窗口底色原本来自 themes.xml 的 `@color/yuewen_window_bg`，走 `values-night` 限定符 ——
+    //    那个限定符跟的是**系统**的深浅模式。用户把 App 手动设成深色、系统却还是浅色时，
+    //    窗口底色仍然是浅色的 #F5F8F6；只要屏幕上有一小块没人覆盖的区域
+    //    （v2.5 及以前就是底部那条 58dp 的底栏占位带），就会白出来一块。
+    //    这正是用户截图反馈的「深色模式底部一条白」。
+    // ② 关掉导航栏的对比度遮罩，否则系统会在浅色内容上再糊一层半透明黑。
+    //
     // 为什么放在 Compose 而不是 themes.xml：App 支持「跟随系统 / 手动浅色 / 手动深色」三档，
     // 手动选择时可能与系统深浅不一致，而只有这里才知道此刻真正生效的是哪一套配色。
     val view = LocalView.current
     val barColor = colorScheme.background.toArgb()
     if (!view.isInEditMode) {
-        SideEffect {
-            val window = (view.context as? Activity)?.window ?: return@SideEffect
-            @Suppress("DEPRECATION")
-            window.statusBarColor = barColor
-            @Suppress("DEPRECATION")
-            window.navigationBarColor = barColor
+        // 用 LaunchedEffect 而不是 SideEffect：SideEffect 每次成功重组都会跑，
+        // 而这几件事只在「底色或深浅变了」的时候才需要做一次。
+        LaunchedEffect(barColor, darkTheme) {
+            val window = (view.context as? Activity)?.window ?: return@LaunchedEffect
+            window.setBackgroundDrawable(ColorDrawable(barColor))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                window.isNavigationBarContrastEnforced = false
+            }
             WindowCompat.getInsetsController(window, view).apply {
                 isAppearanceLightStatusBars = !darkTheme
                 isAppearanceLightNavigationBars = !darkTheme
