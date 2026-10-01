@@ -21,6 +21,9 @@ import com.example.yuewen.data.rss.rssHubDefaultName
 import com.example.yuewen.data.rss.rssHubEncode
 import com.example.yuewen.data.rss.rssHubHost
 import com.example.yuewen.data.util.Json
+import com.example.yuewen.data.util.DEFAULT_HOME_KEYWORDS
+import com.example.yuewen.data.util.HOME_KEYWORD_LIMIT
+import com.example.yuewen.data.util.HOME_KEYWORD_MAX_LEN
 import com.example.yuewen.data.util.LIKE_ESCAPE_CHAR
 import com.example.yuewen.data.util.asArray
 import com.example.yuewen.data.util.asBooleanOr
@@ -28,6 +31,8 @@ import com.example.yuewen.data.util.asLongOr
 import com.example.yuewen.data.util.asObject
 import com.example.yuewen.data.util.asString
 import com.example.yuewen.data.util.likePattern
+import com.example.yuewen.data.util.matchesKeyword
+import com.example.yuewen.data.util.sanitizeKeywords
 import com.example.yuewen.ui.theme.ThemePalette
 import com.example.yuewen.ui.theme.contrastRatio
 import com.example.yuewen.ui.theme.generateScheme
@@ -973,6 +978,47 @@ fun main() {
         })
     check("23.09 中文与空格不受影响", likePattern("新 闻") == "%新 闻%")
     check("23.10 转义符常量就是反斜杠（和 DAO 里的 ESCAPE '\\' 必须一致）", LIKE_ESCAPE_CHAR == '\\')
+
+    // ==================================================================
+    // 24. 首页关键词（v2.4）
+    // ==================================================================
+    println()
+    println("-- 24. 首页关键词 --")
+
+    check("24.01 空列表清洗后还是空", sanitizeKeywords(emptyList()).isEmpty())
+    check("24.02 去掉首尾空格", sanitizeKeywords(listOf("  手机  ")) == listOf("手机"))
+    check("24.03 纯空白的词被丢掉（否则首页会出现一个透明的空胶囊）",
+        sanitizeKeywords(listOf("手机", "   ", "", "汽车")) == listOf("手机", "汽车"))
+    // 关键：忽略大小写去重。AI / ai 在搜索里筛出来的是同一批文章
+    check("24.04 AI 与 ai 只保留一个（保留先出现的写法）",
+        sanitizeKeywords(listOf("AI", "ai", "Ai")) == listOf("AI"))
+    check("24.05 过长的词被截断到 $HOME_KEYWORD_MAX_LEN 个字",
+        sanitizeKeywords(listOf("0123456789")) == listOf("01234567"))
+    check("24.06 最多只留 $HOME_KEYWORD_LIMIT 个（首页那一行再多就只有滚动条了）",
+        sanitizeKeywords((1..15).map { "w$it" }).size == HOME_KEYWORD_LIMIT)
+    check("24.07 清洗不乱动顺序（顺序 = 首页胶囊的排列顺序）",
+        sanitizeKeywords(listOf("汽车", "手机", "AI")) == listOf("汽车", "手机", "AI"))
+    check("24.08 内置默认词本身是干净的（跑一遍清洗不会变）",
+        sanitizeKeywords(DEFAULT_HOME_KEYWORDS) == DEFAULT_HOME_KEYWORDS)
+    check("24.09 默认词没超过上限", DEFAULT_HOME_KEYWORDS.size <= HOME_KEYWORD_LIMIT)
+
+    // ---- 匹配规则 ----
+    val kwTitle = "小米发布新手机"
+    val kwSummary = "续航提升明显"
+    val kwBody = "文中提到了汽车行业的反应"
+    check("24.10 关键词为空 = 不筛（直接算命中，调用方不用再套 if）",
+        matchesKeyword(kwTitle, kwSummary, kwBody, ""))
+    check("24.11 空白的关键词同样算不筛",
+        matchesKeyword(kwTitle, kwSummary, kwBody, "   "))
+    check("24.12 命中标题", matchesKeyword(kwTitle, kwSummary, kwBody, "手机"))
+    check("24.13 命中摘要", matchesKeyword(kwTitle, kwSummary, kwBody, "续航"))
+    // 这条最关键：只匹配标题的话，「汽车」这种常出现在正文里的词会一篇都筛不出来
+    check("24.14 命中正文（只匹配标题 = 用户会觉得关键词失灵）",
+        matchesKeyword(kwTitle, kwSummary, kwBody, "汽车"))
+    check("24.15 忽略大小写", matchesKeyword("OpenAI 发布", "", "", "openai"))
+    check("24.16 哪个字段都不含 → 不命中", !matchesKeyword(kwTitle, kwSummary, kwBody, "财经"))
+    check("24.17 关键词自带空格也能命中（先 trim 再比）",
+        matchesKeyword(kwTitle, kwSummary, kwBody, " 手机 "))
 
     println()
     println("==========================================")

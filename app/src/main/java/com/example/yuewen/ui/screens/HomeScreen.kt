@@ -34,6 +34,8 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MarkEmailUnread
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RssFeed
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material.icons.filled.ViewStream
@@ -41,6 +43,7 @@ import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -85,16 +88,23 @@ import com.example.yuewen.ui.viewmodel.HomeViewModel
 import kotlinx.coroutines.launch
 
 /**
- * 首页信息流（v2.0）。
+ * 首页信息流（v2.0，v2.4 起顶栏多了搜索入口 + 关键词胶囊）。
  *
  * 本轮的变化：
  * 1. 顶部标题用**用户自定义的应用名**（设置 → 个性 → 应用内名称）；
  * 2. 顶栏的「布局」「刷新」按钮可以在设置里单独关掉，副标题也能关；
- * 3. 新增**批量管理**：顶栏最左的勾选图标进入多选，选完在底部操作条上一次处理。
+ * 3. 新增**批量管理**：顶栏最左的勾选图标进入多选，选完在底部操作条上一次处理；
+ * 4. v2.4：顶栏最前面加了**放大镜**，点开直接搜索（原来得先切到「闻件」）；
+ *    订阅源行下面多了**关键词胶囊**（设置里自己填「手机」「汽车」这类词），
+ *    点一下首页就只看含这个词的文章。
  */
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-fun HomeScreen(app: YuewenApplication, onOpenArticle: (String) -> Unit) {
+fun HomeScreen(
+    app: YuewenApplication,
+    onOpenArticle: (String) -> Unit,
+    onOpenSearch: () -> Unit = {}
+) {
     val vm: HomeViewModel = viewModel(factory = HomeViewModel.provide(app))
     val categories by vm.categories.collectAsStateWithLifecycle()
     // v2.0.2：必须在这里订阅一次 —— sources 是 WhileSubscribed 的 StateFlow，
@@ -103,6 +113,9 @@ fun HomeScreen(app: YuewenApplication, onOpenArticle: (String) -> Unit) {
     val chipMode by vm.chipMode.collectAsStateWithLifecycle()
     val category by vm.category.collectAsStateWithLifecycle()
     val sourceFilter by vm.source.collectAsStateWithLifecycle()
+    // v2.4：关键词胶囊
+    val keywords by vm.homeKeywords.collectAsStateWithLifecycle()
+    val keyword by vm.keyword.collectAsStateWithLifecycle()
     val rows by vm.rows.collectAsStateWithLifecycle()
     // v2.3：「全选」的目标链接。以前是同步调 `vm.currentLinks()` 现算，
     // 既每次重组都新建一次列表，又依赖「恰好有别的流订阅着 articles」才拿到新值。
@@ -119,6 +132,8 @@ fun HomeScreen(app: YuewenApplication, onOpenArticle: (String) -> Unit) {
     val showLayoutBtn by app.settingsRepository.homeShowLayoutFlow.collectAsStateWithLifecycle(true)
     val showRefreshBtn by app.settingsRepository.homeShowRefreshFlow.collectAsStateWithLifecycle(true)
     val showSubtitle by app.settingsRepository.homeShowSubtitleFlow.collectAsStateWithLifecycle(true)
+    // v2.4：关键词那一行可以在设置里整行关掉（词不会丢，只是不显示）
+    val showKeywords by app.settingsRepository.homeShowKeywordsFlow.collectAsStateWithLifecycle(true)
     val appTitleRaw by app.settingsRepository.appTitleFlow.collectAsStateWithLifecycle("")
     val appTitle = titleOrDefault(appTitleRaw)
     // v2.2：长按菜单的「在浏览器打开原文」也用设置里选的那个浏览器
@@ -208,6 +223,23 @@ fun HomeScreen(app: YuewenApplication, onOpenArticle: (String) -> Unit) {
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
+                    }
+
+                    // ---- v2.4：搜索入口 ----
+                    // 以前想搜东西必须先切到底部的「闻件」，再确认停在「搜索」那一栏，
+                    // 两步才能开始打字。这个放大镜把入口提到首页顶栏，点开就是全屏搜索，
+                    // 返回键/返回箭头直接回到刚才的首页。
+                    // 放在图标组的**最前面**：它是这一排里唯一的「主操作」，
+                    // 而且右侧那几枚（布局 / 刷新）位置早就固定了，别去动它们。
+                    IconButton(
+                        onClick = onOpenSearch,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Search,
+                            contentDescription = "搜索文章",
+                            tint = cs.primary
+                        )
                     }
 
                     // 批量管理入口
@@ -303,6 +335,18 @@ fun HomeScreen(app: YuewenApplication, onOpenArticle: (String) -> Unit) {
                             else listOf("全部阅源" to "") + srcNames.map { it to it },
                     selected = sourceFilter,
                     onSelect = vm::selectSource
+                )
+            }
+
+            // ---------------- v2.4：关键词胶囊 ----------------
+            // 和上面两行是**并列的第三种维度**（分类 / 阅源 / 关键词），三者可以叠加。
+            // 画法刻意跟前两行不一样（左边挂个标签图标 + 胶囊用三级色）：
+            // 三行都是「一排一模一样的胶囊」的话，用户根本分不清哪行是哪行。
+            if (showKeywords) {
+                HomeKeywordRow(
+                    keywords = keywords,
+                    selected = keyword,
+                    onSelect = vm::selectKeyword
                 )
             }
 
@@ -599,6 +643,69 @@ private fun HomeChipRow(
                 onClick = { onSelect(value) },
                 label = { Text(label) }
             )
+        }
+    }
+}
+
+/**
+ * 首页的关键词胶囊行（v2.4）。
+ *
+ * 和上面两行的区别都在「长得不一样」上：左边挂一个标签小图标、胶囊用三级色。
+ * 三排一模一样的胶囊叠在一起，用户是分不清哪行是分类、哪行是阅源、哪行是关键词的。
+ *
+ * [keywords] 为空就整行不渲染 —— 用户在设置里把词删光了，这一行就该彻底消失，
+ * 而不是留一条空白或者一个孤零零的标签图标。
+ */
+@Composable
+private fun HomeKeywordRow(
+    keywords: List<String>,
+    selected: String,
+    onSelect: (String) -> Unit
+) {
+    if (keywords.isEmpty()) return
+    val cs = MaterialTheme.colorScheme
+    val chipColors = FilterChipDefaults.filterChipColors(
+        containerColor = cs.surfaceContainerHigh,
+        labelColor = cs.onSurfaceVariant,
+        selectedContainerColor = cs.tertiaryContainer,
+        selectedLabelColor = cs.onTertiaryContainer
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            // ⚠️ 必须用 AutoMirrored 版：普通的 Icons.Filled.Label 已标废弃，
+            // 编译会吐一条 w:（本项目要求零警告）。RTL 语言下镜像才对。
+            Icons.AutoMirrored.Filled.Label,
+            contentDescription = "关键词",
+            tint = cs.onSurfaceVariant,
+            modifier = Modifier.size(15.dp)
+        )
+        Spacer(Modifier.width(7.dp))
+        Row(
+            modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 和阅源行同一个思路：没筛的时候不摆「全部」，一旦选中了才出现，
+            // 充当「取消筛选」的入口。另外再点一次已选中的胶囊也能取消（见 selectKeyword）。
+            if (selected.isNotBlank()) {
+                FilterChip(
+                    selected = false,
+                    onClick = { onSelect("") },
+                    label = { Text("全部关键词") },
+                    colors = chipColors
+                )
+            }
+            keywords.forEach { kw ->
+                FilterChip(
+                    selected = kw.equals(selected, true),
+                    onClick = { onSelect(kw) },
+                    label = { Text(kw) },
+                    colors = chipColors
+                )
+            }
         }
     }
 }

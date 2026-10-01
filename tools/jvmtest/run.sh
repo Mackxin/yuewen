@@ -100,6 +100,10 @@ SOURCES=(
   # 全靠这里的断言兜住，所以一定要挂进来。
   "$SRC/ui/theme/PaletteGen.kt"
   "$SRC/data/util/SqlLike.kt"
+  # v2.4：首页关键词胶囊的清洗与匹配（纯字符串逻辑）。
+  # 这两个函数直接决定「首页点一下胶囊还剩几篇文章」—— 去重规则写错会冒出重复胶囊，
+  # 匹配漏了正文会出现「明明有文章却筛出空的」，都只能靠断言兜住。
+  "$SRC/data/util/HomeKeyword.kt"
   "$HERE/TestMain.kt"
 )
 

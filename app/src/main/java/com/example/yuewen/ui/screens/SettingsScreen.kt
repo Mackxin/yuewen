@@ -73,6 +73,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.yuewen.BuildConfig
 import com.example.yuewen.YuewenApplication
+import com.example.yuewen.data.util.HOME_KEYWORD_LIMIT
 import com.example.yuewen.ui.components.ArticleListMode
 import com.example.yuewen.ui.theme.ReaderFont
 import com.example.yuewen.ui.theme.ReaderSizeLabels
@@ -85,6 +86,7 @@ import com.example.yuewen.ui.util.HomeSortMode
 import com.example.yuewen.ui.util.IconNames
 import com.example.yuewen.ui.util.TtsRateLabels
 import com.example.yuewen.ui.util.iconNameOf
+import com.example.yuewen.ui.util.rememberImeDismiss
 import com.example.yuewen.ui.util.titleOrDefault
 import com.example.yuewen.ui.viewmodel.HomeChipMode
 import com.example.yuewen.ui.viewmodel.SettingsViewModel
@@ -592,13 +594,21 @@ fun SettingsScreen(
     val themePalette by vm.themePalette.collectAsStateWithLifecycle()
     val customHue by vm.customHue.collectAsStateWithLifecycle()
     val customSat by vm.customSat.collectAsStateWithLifecycle()
+    // v2.4：首页关键词
+    val homeKeywords by vm.homeKeywords.collectAsStateWithLifecycle()
+    val homeShowKeywords by vm.homeShowKeywords.collectAsStateWithLifecycle()
 
     val cs = MaterialTheme.colorScheme
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    // 「添加」按钮敲完要收键盘，否则输入法会一直挡着下面那排关键词
+    val dismissIme = rememberImeDismiss()
+
     var showBlock by remember { mutableStateOf(false) }
     var kwInput by remember { mutableStateOf("") }
+    var showKeywords by remember { mutableStateOf(false) }
+    var homeKwInput by remember { mutableStateOf("") }
     var fontExpanded by remember { mutableStateOf(false) }
     var refreshExpanded by remember { mutableStateOf(false) }
     var titleEditing by remember { mutableStateOf(false) }
@@ -900,6 +910,80 @@ fun SettingsScreen(
                     "顶栏那排胶囊可以按「分类」筛，也可以按「阅源」筛；选「都显示」就是上下两行，" +
                         "上面选分类、下面选这个分类里的阅源，两个条件是叠加的。"
                 )
+
+                // ---- v2.4：首页关键词胶囊 ----
+                // 和「屏蔽关键词」放在一起容易混，所以刻意隔开：那个是「不想看什么」，
+                // 这个是「想只看什么」，一正一反，各自在自己那一组里。
+                Div()
+                SettingsRow(
+                    "首页关键词",
+                    trailing = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                if (homeKeywords.isEmpty()) "未设置" else "${homeKeywords.size} 个",
+                                color = cs.onSurfaceVariant
+                            )
+                            Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = cs.onSurfaceVariant)
+                        }
+                    },
+                    onClick = { showKeywords = !showKeywords }
+                )
+                if (showKeywords) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = homeKwInput,
+                            onValueChange = { homeKwInput = it },
+                            label = { Text("添加关键词") },
+                            placeholder = { Text("如：手机") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        TextButton(onClick = {
+                            if (homeKwInput.isNotBlank()) {
+                                vm.addHomeKeyword(homeKwInput.trim())
+                                homeKwInput = ""
+                                // 加完就收键盘：下面那排词才是用户接下来要看的东西
+                                dismissIme()
+                            }
+                        }) { Text("添加") }
+                    }
+                    if (homeKeywords.isNotEmpty()) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            homeKeywords.forEach { kw ->
+                                Surface(
+                                    color = cs.primaryContainer,
+                                    shape = RoundedCornerShape(20.dp),
+                                    modifier = Modifier.clickable { vm.removeHomeKeyword(kw) }
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                                        Text(kw, color = cs.onPrimaryContainer, style = MaterialTheme.typography.labelMedium)
+                                        Spacer(Modifier.width(4.dp))
+                                        Icon(Icons.Filled.Close, contentDescription = "移除", tint = cs.onPrimaryContainer, modifier = Modifier.size(14.dp))
+                                    }
+                                }
+                            }
+                        }
+                        Caption("点一下某个词就能删掉它（最多 $HOME_KEYWORD_LIMIT 个）。")
+                    }
+                }
+                Caption(
+                    "这里填的词会变成首页顶部的一排胶囊：点一下，首页就只看标题 / 摘要 / 正文里含这个词的文章，" +
+                        "再点一次取消。和分类、阅源是叠加关系 —— 三个条件同时生效。"
+                )
+                Div()
+                SettingsRow(
+                    "显示关键词行",
+                    trailing = { Switch(checked = homeShowKeywords, onCheckedChange = { vm.setHomeShowKeywords(it) }) }
+                )
+                Caption("关掉只是首页不再显示那一行，上面填的词会原样留着，随时可以再打开。")
                 Div()
                 // 选项按当前顶栏模式拼：
                 //   分类项只在顶栏显示分类时才有意义，阅源项同理 —— 免得选了不生效。
@@ -1197,7 +1281,14 @@ fun SettingsScreen(
                             modifier = Modifier.weight(1f)
                         )
                         Spacer(Modifier.width(8.dp))
-                        TextButton(onClick = { if (kwInput.isNotBlank()) { vm.addBlockedKeyword(kwInput.trim()); kwInput = "" } }) { Text("添加") }
+                        TextButton(onClick = {
+                            if (kwInput.isNotBlank()) {
+                                vm.addBlockedKeyword(kwInput.trim())
+                                kwInput = ""
+                                // v2.4：加完收键盘，别让它一直挡着下面那排已屏蔽的词
+                                dismissIme()
+                            }
+                        }) { Text("添加") }
                     }
                     if (blockedKeywords.isNotEmpty()) {
                         FlowRow(

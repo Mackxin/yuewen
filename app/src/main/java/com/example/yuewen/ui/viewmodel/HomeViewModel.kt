@@ -9,6 +9,8 @@ import com.example.yuewen.data.model.Article
 import com.example.yuewen.data.model.FeedSource
 import com.example.yuewen.data.preload.PreloadManager
 import com.example.yuewen.data.repository.NewsRepository
+import com.example.yuewen.data.util.DEFAULT_HOME_KEYWORDS
+import com.example.yuewen.data.util.matchesKeyword
 import com.example.yuewen.ui.components.ArticleListMode
 import com.example.yuewen.ui.util.HomeSortMode
 import com.example.yuewen.ui.util.sortArticles
@@ -121,6 +123,26 @@ class HomeViewModel(
     val source: StateFlow<String> = _source
 
     /**
+     * 当前选中的**关键词胶囊**（v2.4）。空 = 不按关键词筛。
+     *
+     * 和 [category] / [source] 一样是个独立的维度：它不参与数据库查询，
+     * 而是在内存里对「分类 × 阅源」的结果再筛一道（见 [articles]）。
+     * 这样「手机」「汽车」这类词才能匹配到正文，而不是只匹配标题。
+     */
+    private val _keyword = MutableStateFlow("")
+    val keyword: StateFlow<String> = _keyword
+
+    /**
+     * 首页关键词那一行显示哪些词（设置里可增删）。
+     *
+     * 用 `Eagerly`：首页要拿它渲染胶囊，`init` 里还要订阅它做「词被删了就把筛选也撤掉」，
+     * 一旦用 `WhileSubscribed`，退到后台再回来时会短暂拿到默认词，
+     * 那一行会闪一下才变成用户自己的词。
+     */
+    val homeKeywords: StateFlow<List<String>> = settings.homeKeywordsFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, DEFAULT_HOME_KEYWORDS)
+
+    /**
      * 某个分类下能选的阅源名。
      * 分类为「推荐」时返回全部；否则只给这个分类里的源 —— 换了分类，源行跟着变，不会点出空列表。
      *
@@ -174,17 +196,30 @@ class HomeViewModel(
     private val sortSpec: Flow<Pair<HomeSortMode, Long>> =
         combine(sortMode, shuffleSeed) { mode, seed -> mode to seed }
 
+    /**
+     * 「关键词 + 仅看未读」打包成一个流。
+     *
+     * 和 [sortSpec] 同一个理由：`combine` 的具名重载**最多 5 个上游**。
+     * v2.4 加了关键词筛选之后正好要多一个（feed / 关键词 / 未读 / 屏蔽源 / 屏蔽词 / 排序 = 6），
+     * 与其退回 vararg 版本去手写 `Array<Any?>` 转型（顺序一改就运行时 CCE），
+     * 不如先把这两项合成一个 Pair，链条仍然是「5 个具名上游」。
+     */
+    private val quickFilters: Flow<Pair<String, Boolean>> =
+        combine(_keyword, _unreadOnly) { kw, unread -> kw to unread }
+
     /** 过滤后的文章（屏蔽来源 / 关键词 / 仅看未读 / 排序都在这里生效）。 */
     private val articles: StateFlow<List<Article>> =
         combine(
             feed,
-            _unreadOnly,
+            quickFilters,
             settings.blockedSourcesFlow,
             settings.blockedKeywordsFlow,
             sortSpec
-        ) { list, unread, blockedSources, blockedKeywords, (sort, seed) ->
+        ) { list, (keyword, unread), blockedSources, blockedKeywords, (sort, seed) ->
             val filtered = list.filter { a ->
                 if (unread && a.isRead) return@filter false
+                // 关键词匹配 标题 / 摘要 / 正文，和「闻件 → 搜索」的口径一致
+                if (!matchesKeyword(a.title, a.summary, a.fullText, keyword)) return@filter false
                 if (blockedSources.contains(a.sourceName)) return@filter false
                 if (blockedKeywords.any { kw -> a.title.contains(kw, true) || a.summary.contains(kw, true) }) return@filter false
                 true
@@ -257,6 +292,15 @@ class HomeViewModel(
                 if (cat.isNotBlank() && chipMode.value != HomeChipMode.Source) _category.value = cat
             }
         }
+        // v2.4：关键词被删掉时，如果首页正好还筛着那个词，必须主动把筛选撤掉。
+        // 否则那块胶囊跟着词一起从界面上消失了，列表却还被它筛着 ——
+        // 用户看到的是「首页突然一篇都没有了，而且找不到任何可以取消的按钮」。
+        viewModelScope.launch {
+            homeKeywords.collect { list ->
+                val cur = _keyword.value
+                if (cur.isNotBlank() && list.none { it.equals(cur, true) }) _keyword.value = ""
+            }
+        }
         viewModelScope.launch { refreshOnLaunchIfNeeded() }
     }
 
@@ -326,6 +370,17 @@ class HomeViewModel(
     /** 只看某个阅源；传空字符串 = 全部阅源。 */
     fun selectSource(name: String) {
         _source.value = name
+    }
+
+    /**
+     * 点关键词胶囊：再点一次同一个词就取消筛选（传空串同理 = 回到全部）。
+     *
+     * 做成「可点掉」而不是必须去点「全部」那个胶囊，是因为那一行本身可以横向滚动 ——
+     * 词多的时候「全部」容易被滚出屏幕外。
+     */
+    fun selectKeyword(kw: String) {
+        val cur = _keyword.value
+        _keyword.value = if (kw.isBlank() || kw.equals(cur, true)) "" else kw
     }
 
     fun setListMode(mode: ArticleListMode) {

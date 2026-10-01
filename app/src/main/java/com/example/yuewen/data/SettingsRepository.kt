@@ -10,6 +10,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.example.yuewen.data.model.FeedCatalog
 import com.example.yuewen.data.model.FeedSource
 import com.example.yuewen.data.model.sanitizeSources
+import com.example.yuewen.data.util.DEFAULT_HOME_KEYWORDS
+import com.example.yuewen.data.util.sanitizeKeywords
 import com.example.yuewen.ui.theme.DEFAULT_CUSTOM_HUE
 import com.example.yuewen.ui.theme.DEFAULT_CUSTOM_SAT
 import kotlinx.coroutines.flow.Flow
@@ -213,6 +215,24 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
     /** 自定义配色的鲜艳度（0..100，100 = 最艳）。 */
     private val KEY_CUSTOM_SAT = intPreferencesKey("custom_sat")
 
+    // ==================== v2.4：首页关键词胶囊 ====================
+
+    /**
+     * 首页顶栏那排「关键词胶囊」用的词（v2.4）。
+     *
+     * 存 `:::` 拼接串，和屏蔽列表 / 最近搜索一个格式。
+     *
+     * ⚠️ **「键不存在」和「键是空串」是两件不同的事**：
+     * 前者 = 用户从来没碰过 → 用内置的 [DEFAULT_HOME_KEYWORDS]；
+     * 后者 = 用户主动把词删光了 → 就是空列表（那一行不显示），
+     * 不能再给他弹回默认词，否则会变成「删了又自己长出来」。
+     * 所以读取时用的是 `prefs[KEY] ?: 默认值`，而不是 `isNullOrBlank()` 判断。
+     */
+    private val KEY_HOME_KEYWORDS = stringPreferencesKey("home_keywords")
+
+    /** 首页是否显示关键词那一行（默认显示；一个词都没有时无论如何都不显示）。 */
+    private val KEY_HOME_SHOW_KEYWORDS = booleanPreferencesKey("home_show_keywords")
+
     val themeFlow: Flow<String> = dataStore.data.map { it[KEY_THEME] ?: "system" }
     val fontFlow: Flow<String> = dataStore.data.map { it[KEY_FONT] ?: "standard" }
     val categoryFlow: Flow<String> = dataStore.data.map { it[KEY_CATEGORY] ?: "推荐" }
@@ -316,6 +336,46 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
     suspend fun setCustomHue(v: Int) = dataStore.edit { it[KEY_CUSTOM_HUE] = v.coerceIn(0, 360) }
 
     suspend fun setCustomSat(v: Int) = dataStore.edit { it[KEY_CUSTOM_SAT] = v.coerceIn(0, 100) }
+
+    // ---- v2.4：首页关键词 ----
+
+    /**
+     * 首页关键词胶囊。
+     *
+     * ⚠️ 默认值只能挂在 `prefs[KEY]` 的 **null** 上（见 [KEY_HOME_KEYWORDS] 的注释）：
+     * 用户删光之后存的是空串，那时必须老实返回空列表 —— 于是首页那一行不显示。
+     */
+    val homeKeywordsFlow: Flow<List<String>> = dataStore.data.map { prefs ->
+        val raw = prefs[KEY_HOME_KEYWORDS] ?: return@map DEFAULT_HOME_KEYWORDS
+        sanitizeKeywords(decodeList(raw))
+    }
+
+    val homeShowKeywordsFlow: Flow<Boolean> = dataStore.data.map { it[KEY_HOME_SHOW_KEYWORDS] ?: true }
+
+    /**
+     * 加一个首页关键词。
+     *
+     * 读和写都在 `edit` 回调内部（v2.3 起的老规矩：分开写会丢更新）。
+     * 键还没写过时**以内置默认词为起点** —— 否则用户加第一个词时，
+     * 屏幕上那几个默认词会莫名其妙一起消失。
+     */
+    suspend fun addHomeKeyword(kw: String) {
+        if (kw.isBlank()) return
+        dataStore.edit { prefs ->
+            val base = prefs[KEY_HOME_KEYWORDS]?.let(::decodeList) ?: DEFAULT_HOME_KEYWORDS
+            prefs[KEY_HOME_KEYWORDS] = sanitizeKeywords(base + kw).joinToString(":::")
+        }
+    }
+
+    /** 删一个首页关键词（忽略大小写匹配，和 [sanitizeKeywords] 的去重规则一致）。 */
+    suspend fun removeHomeKeyword(kw: String) {
+        dataStore.edit { prefs ->
+            val base = prefs[KEY_HOME_KEYWORDS]?.let(::decodeList) ?: DEFAULT_HOME_KEYWORDS
+            prefs[KEY_HOME_KEYWORDS] = base.filter { !it.equals(kw, true) }.joinToString(":::")
+        }
+    }
+
+    suspend fun setHomeShowKeywords(v: Boolean) = dataStore.edit { it[KEY_HOME_SHOW_KEYWORDS] = v }
 
     suspend fun setHomeChipMode(v: String) = dataStore.edit { it[KEY_HOME_CHIP_MODE] = v }
     suspend fun setHomeDefaultCategory(v: String) = dataStore.edit { it[KEY_HOME_DEFAULT_CATEGORY] = v }
@@ -535,6 +595,10 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
                     KEY_THEME_PALETTE.name -> prefs[KEY_THEME_PALETTE] = value
                     KEY_CUSTOM_HUE.name -> value.toIntOrNull()?.let { prefs[KEY_CUSTOM_HUE] = it.coerceIn(0, 360) }
                     KEY_CUSTOM_SAT.name -> value.toIntOrNull()?.let { prefs[KEY_CUSTOM_SAT] = it.coerceIn(0, 100) }
+                    // v2.4：首页关键词。恢复时先过一遍清洗，手改过的备份也进不来脏数据。
+                    KEY_HOME_KEYWORDS.name -> prefs[KEY_HOME_KEYWORDS] =
+                        sanitizeKeywords(decodeList(value)).joinToString(":::")
+                    KEY_HOME_SHOW_KEYWORDS.name -> prefs[KEY_HOME_SHOW_KEYWORDS] = asBool(value)
                     KEY_REFRESH.name -> value.toIntOrNull()?.let { prefs[KEY_REFRESH] = it }
                 }
             }
@@ -625,7 +689,9 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         KEY_BROWSER_PKG, KEY_HOME_SORT,
         // v2.3：配色方案（含自定义色相/鲜艳度）。这是最典型的「个性化」，
         // 换设备丢掉的话用户会立刻发现外观变了。
-        KEY_THEME_PALETTE, KEY_CUSTOM_HUE, KEY_CUSTOM_SAT
+        KEY_THEME_PALETTE, KEY_CUSTOM_HUE, KEY_CUSTOM_SAT,
+        // v2.4：首页关键词。用户一个个敲进去的词，换手机不该重敲一遍。
+        KEY_HOME_KEYWORDS, KEY_HOME_SHOW_KEYWORDS
     )
 
     private companion object {

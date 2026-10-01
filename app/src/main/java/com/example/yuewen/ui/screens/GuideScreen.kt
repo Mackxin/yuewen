@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.RssFeed
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapVert
@@ -140,6 +141,29 @@ fun GuideScreen(app: YuewenApplication, onBack: () -> Unit) {
                 )
             }
 
+            // ---------------- 搜索 / 关键词（v2.4） ----------------
+            GuideCard(title = "找东西：搜索与关键词", icon = Icons.Filled.Search) {
+                Text(
+                    "首页顶栏最左边那个放大镜就是搜索，点开直接打字 —— 不用先切到「闻件」。\n\n" +
+                            "搜的范围是已经存到手机里的文章：标题、摘要、抓取过的正文、来源名都会匹配，" +
+                            "不分类别。所以在首页多刷新几次，能搜到的就越多。\n\n" +
+                            "搜完敲键盘上的「搜索」、或者点任意一条结果，键盘都会自己收起来。" +
+                            "（v2.4 之前它赖着不走，得按系统返回键才行。）",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = cs.onSurface
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "「关键词」是一条更省事的近路：\n\n" +
+                            "在「设置 → 外观 → 首页筛选 → 首页关键词」里填几个你关心的词（比如「手机」「汽车」），" +
+                            "首页顶部就会多出一排胶囊。点一下，首页就只剩含这个词的文章，再点一下取消。\n\n" +
+                            "它和「分类」「阅源」是叠加关系，三个条件可以一起用。想删掉某个词就在设置里点它一下；" +
+                            "把词全删光，那一行会自己消失。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = cs.onSurfaceVariant
+                )
+            }
+
             // ---------------- 列表怎么排、原文用谁打开（v2.2） ----------------
             GuideCard(title = "列表排序 / 用哪个浏览器看原文", icon = Icons.Filled.SwapVert) {
                 Text(
@@ -205,6 +229,8 @@ fun GuideScreen(app: YuewenApplication, onBack: () -> Unit) {
 
             // ---------------- 小技巧 ----------------
             GuideCard(title = "几个能省事的小技巧", icon = Icons.Filled.Compress) {
+                GuideBullet("首页顶栏最左边的放大镜 = 直接搜索，不用先切到「闻件」再找「搜索」那一栏")
+                GuideBullet("首页关键词：设置 →「外观 → 首页筛选 → 首页关键词」填几个词，首页点一下胶囊就只筛这类文章（v2.4）")
                 GuideBullet("首页顶栏那排胶囊能按「分类」筛、也能按「阅源」筛：设置 →「外观 → 首页筛选」里切换，还能设打开 App 时默认停在哪儿")
                 GuideBullet("文章可以按「最新 / 最早 / 随机 / 按阅源 / 按标题」排：设置 →「外观 → 文章排序」")
                 GuideBullet("点「原文」用哪个浏览器，可以在设置里固定下来：「阅读与朗读 → 打开原文的浏览器」")

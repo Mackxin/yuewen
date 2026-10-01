@@ -17,6 +17,7 @@ import com.example.yuewen.data.preload.PreloadProgress
 import com.example.yuewen.data.repository.NewsRepository
 import com.example.yuewen.data.rss.FeedProbe
 import com.example.yuewen.data.rss.RefreshScheduler
+import com.example.yuewen.data.util.DEFAULT_HOME_KEYWORDS
 import com.example.yuewen.ui.components.ArticleListMode
 import com.example.yuewen.ui.theme.DEFAULT_CUSTOM_HUE
 import com.example.yuewen.ui.theme.DEFAULT_CUSTOM_SAT
@@ -139,6 +140,25 @@ class SettingsViewModel(
     fun setHomeChipMode(v: HomeChipMode) = viewModelScope.launch { settings.setHomeChipMode(v.key) }
     fun setHomeDefaultCategory(v: String) = viewModelScope.launch { settings.setHomeDefaultCategory(v) }
     fun setHomeDefaultSource(v: String) = viewModelScope.launch { settings.setHomeDefaultSource(v) }
+
+    // ==================== v2.4：首页关键词胶囊 ====================
+
+    /**
+     * 设置里那份关键词列表。
+     *
+     * ⚠️ 用 `Eagerly`：`HomeViewModel` 也要用同一份数据来判断「当前筛着的词是不是被删了」。
+     * 用 `WhileSubscribed` 的话，设置页一关上游就断，首页那边会拿到默认词、
+     * 把用户自己填的词判成「已删除」，筛选状态被莫名清掉。
+     */
+    val homeKeywords: StateFlow<List<String>> = settings.homeKeywordsFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, DEFAULT_HOME_KEYWORDS)
+
+    val homeShowKeywords: StateFlow<Boolean> = settings.homeShowKeywordsFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    fun addHomeKeyword(kw: String) = viewModelScope.launch { settings.addHomeKeyword(kw) }
+    fun removeHomeKeyword(kw: String) = viewModelScope.launch { settings.removeHomeKeyword(kw) }
+    fun setHomeShowKeywords(v: Boolean) = viewModelScope.launch { settings.setHomeShowKeywords(v) }
 
     // ==================== v2.2：首页排序 / 默认浏览器 ====================
 

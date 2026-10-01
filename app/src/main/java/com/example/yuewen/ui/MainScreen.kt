@@ -49,11 +49,13 @@ import com.example.yuewen.ui.screens.DetailScreen
 import com.example.yuewen.ui.screens.GuideScreen
 import com.example.yuewen.ui.screens.HomeScreen
 import com.example.yuewen.ui.screens.RssHubScreen
+import com.example.yuewen.ui.screens.SearchPane
 import com.example.yuewen.ui.screens.SettingsScreen
 import com.example.yuewen.ui.screens.SourcesScreen
 import com.example.yuewen.ui.screens.StatsScreen
 import com.example.yuewen.ui.screens.StorageScreen
 import com.example.yuewen.ui.screens.WenjianScreen
+import com.example.yuewen.ui.util.rememberImeDismiss
 
 /**
  * 底部胶囊栏占用的高度。页面内容与阅读正文都要按这个留出空档，别被压住。
@@ -80,8 +82,24 @@ fun MainScreen() {
     var showStats by remember { mutableStateOf(false) }
     var showStorage by remember { mutableStateOf(false) }
     var showGuide by remember { mutableStateOf(false) }
+    // v2.4：首页顶栏放大镜进来的全屏搜索浮层
+    var showSearch by remember { mutableStateOf(false) }
 
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { tabs.size })
+
+    // 收键盘：打开文章、切底栏 Tab 之前先收掉，否则输入法会跟着飘到新页面上
+    val dismissIme = rememberImeDismiss()
+
+    /**
+     * 打开某篇文章。
+     *
+     * v2.4：顺手收掉输入法。搜索浮层点结果、「闻件」里点结果都会走这里 ——
+     * 但详情页本身不带输入框，键盘跟过去只会挡住正文。
+     */
+    val openArticle: (String) -> Unit = { link ->
+        dismissIme()
+        detailLink = link
+    }
 
     // 底部导航的未读徽标：直接订阅未读数，不去打扰各个页面的 ViewModel
     val unreadFlow = remember { app.newsRepository.observeUnreadCount() }
@@ -138,16 +156,21 @@ fun MainScreen() {
     // 拦截系统返回（边缘手势 / 返回键）：在 App 内逐级返回，而不是直接退出
     BackHandler(
         enabled = reading || showAddSource || showRssHub || showAbout || showStats || showStorage || showGuide ||
-                selectedTab != Screen.Home
+                showSearch || selectedTab != Screen.Home
     ) {
         when {
+            // ⚠️ 顺序 = 「谁画在最上面谁先关」。
+            // [reading]（详情浮层）永远盖在所有东西之上，所以放在最前面 ——
+            // v2.4 起搜索浮层是可以和它共存的：从搜索结果点进文章，详情压在搜索上面，
+            // 返回键应该先退文章、再退搜索，而不是反过来。
+            reading -> closeReader()                               // 详情浮层 → 关
             showRssHub -> showRssHub = false                         // RSSHub 订阅页 → 关
             showGuide -> showGuide = false                        // 新手指南 → 关
             showStorage -> showStorage = false                     // 缓存管理 → 关
             showStats -> showStats = false                         // 阅读统计 → 关
             showAbout -> showAbout = false                         // 关于页 → 关
             showAddSource -> showAddSource = false                 // 加源页 → 关
-            reading -> closeReader()                               // 详情浮层 → 关
+            showSearch -> showSearch = false                        // 搜索浮层 → 关
             else -> selectedTab = Screen.Home                      // 非首页 Tab → 回首页
         }
     }
@@ -183,8 +206,13 @@ fun MainScreen() {
         ) { page ->
             Box(Modifier.fillMaxSize().padding(bottom = contentInset)) {
                 when (tabs[page]) {
-                    Screen.Home -> HomeScreen(app = app, onOpenArticle = { detailLink = it })
-                    Screen.Wenjian -> WenjianScreen(app = app, onOpenArticle = { detailLink = it })
+                    Screen.Home -> HomeScreen(
+                        app = app,
+                        onOpenArticle = openArticle,
+                        // v2.4：顶栏放大镜 → 全屏搜索浮层
+                        onOpenSearch = { showSearch = true }
+                    )
+                    Screen.Wenjian -> WenjianScreen(app = app, onOpenArticle = openArticle)
                     Screen.Sources -> SourcesScreen(
                         app = app,
                         onOpenAddSource = { showAddSource = true },
@@ -203,6 +231,23 @@ fun MainScreen() {
                     )
                     else -> Unit
                 }
+            }
+        }
+
+        // ---------------- v2.4：首页放大镜进来的全屏搜索 ----------------
+        //
+        // 刻意画在 Pager **之上、详情浮层之下**，而且底栏保持可见：
+        // 这样「搜索 → 点结果看文章 → 返回」能退回搜索结果继续翻，
+        // 同时底栏还在，用户随时可以点别的 Tab 走人（点 Tab 会顺手关掉它）。
+        if (showSearch) {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(bottom = contentInset)) {
+                SearchPane(
+                    app = app,
+                    onOpenArticle = openArticle,
+                    onBack = { showSearch = false },
+                    // 用户点放大镜就是来打字的，直接把键盘弹出来
+                    autoFocus = true
+                )
             }
         }
 
@@ -238,6 +283,9 @@ fun MainScreen() {
                     // 以前这里只改 selectedTab，而详情浮层还严严实实盖在最上面，
                     // 用户看到的就是「点了没反应」。现在顺手把浮层关掉，底栏才真的可用。
                     if (reading) closeReader()
+                    // v2.4：搜索浮层同理 —— 它盖在 Pager 上，不关掉的话点底栏也像「没反应」
+                    if (showSearch) showSearch = false
+                    dismissIme()
                     selectedTab = tab
                 },
                 unreadCount = if (showUnreadBadge) unread else 0,
