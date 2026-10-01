@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>阅闻 News App · 外观稿</title>
+<style>
+  :root{
+    --bg:#F7F8F6; --surface:#FFFFFF; --screen:#F4F5F3;
+    --text-1:#2C2C2A; --text-2:#5F5E5A; --text-3:#888780;
+    --border:#E5E4DF; --border-strong:#C9C8C2;
+    --accent:#1D9E75; --accent-soft:#E1F5EE; --accent-line:#5DCAA5;
+    --radius:12px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text-1);
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    padding:32px 24px 60px;line-height:1.6;}
+  h1{font-size:22px;font-weight:600;margin:0 0 4px;}
+  .sub{color:var(--text-2);font-size:14px;margin:0 0 28px;}
+  .legend{display:flex;flex-wrap:wrap;gap:18px;padding:16px 20px;background:var(--surface);
+    border:1px solid var(--border);border-radius:var(--radius);margin-bottom:32px;}
+  .legend .group{font-size:12px;color:var(--text-3);}
+  .legend .row{display:flex;gap:8px;align-items:center;margin-top:6px;font-size:12px;color:var(--text-2);}
+  .sw{width:18px;height:18px;border-radius:5px;border:1px solid var(--border);}
+  .phones{display:flex;flex-wrap:wrap;gap:26px;align-items:flex-start;}
+  .phone{width:300px;background:var(--surface);border:1px solid var(--border);border-radius:30px;padding:9px;flex:none;}
+  .screen{background:var(--screen);border-radius:22px;overflow:hidden;min-height:560px;}
+  .statusbar{display:flex;align-items:center;justify-content:space-between;padding:11px 18px 5px;font-size:12px;color:var(--text-2);}
+  .battery{width:22px;height:11px;border:1px solid var(--text-3);border-radius:2px;display:flex;align-items:center;padding:1px;}
+  .battery i{width:70%;height:60%;background:var(--text-2);border-radius:1px;display:block;}
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:11px 16px;background:var(--surface);
+    border-bottom:1px solid var(--border);}
+  .topbar .name{font-size:16px;font-weight:600;}
+  .chips{display:flex;gap:8px;padding:13px 16px;overflow:hidden;}
+  .chip{font-size:12px;padding:6px 13px;border-radius:999px;border:1px solid var(--border);color:var(--text-2);background:var(--surface);white-space:nowrap;}
+  .chip.on{background:var(--accent-soft);color:var(--accent);border-color:var(--accent-line);}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:13px;margin:0 13px 10px;display:flex;gap:12px;align-items:flex-start;}
+  .thumb{width:74px;height:74px;border-radius:10px;background:var(--screen);flex:none;}
+  .card .t{font-size:14px;font-weight:500;line-height:1.4;margin:0 0 6px;}
+  .card .m{font-size:12px;color:var(--text-2);margin:0;}
+  .searchbox{display:flex;align-items:center;gap:8px;background:var(--screen);border-radius:10px;padding:10px 13px;margin:13px;color:var(--text-2);font-size:13px;}
+  .sectionlabel{font-size:12px;color:var(--text-3);margin:16px 16px 8px;}
+  .hot{display:flex;align-items:center;gap:12px;padding:11px 16px;}
+  .hot .rank{font-size:15px;font-weight:600;color:var(--accent);width:16px;}
+  .hero{width:100%;height:155px;border-radius:12px;background:var(--screen);margin-bottom:13px;}
+  .detail-pad{padding:15px;}
+  .detail-pad .t{font-size:16px;font-weight:600;line-height:1.4;margin:0 0 8px;}
+  .detail-pad p{font-size:13px;line-height:1.75;color:var(--text-2);margin:0 0 10px;}
+  .collectbtn{background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent-line);border-radius:10px;font-size:13px;font-weight:500;padding:10px 0;text-align:center;margin-top:16px;}
+  .bm{fill:var(--accent);stroke:var(--accent);}
+  .tag{font-size:11px;color:var(--text-3);}
+  .caption{font-size:12px;color:var(--text-3);margin:8px 0 0;text-align:center;}
+  .tabbar{display:flex;justify-content:space-around;align-items:center;margin:10px 14px 14px;background:rgba(255,255,255,0.82);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:0.5px solid rgba(0,0,0,0.06);border-radius:999px;padding:8px 6px;box-shadow:0 6px 18px rgba(0,0,0,0.07);}
+  .tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 12px;font-size:11px;color:var(--text-2);border-radius:999px;}
+  .tab.on{color:var(--accent);background:var(--accent-soft);}
+  .tab svg{width:20px;height:20px;}
+  .catpill{font-size:13px;padding:6px 12px;border-radius:999px;border:1px solid var(--border);background:var(--surface);display:flex;align-items:center;gap:5px;color:var(--text-1);}
+  .dropdown{margin:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .catitem{font-size:13px;padding:8px 6px;border-radius:10px;text-align:center;color:var(--text-2);background:var(--screen);}
+  .catitem.on{background:var(--accent-soft);color:var(--accent);}
+  .badge{font-size:10px;color:#fff;background:var(--accent);border-radius:5px;padding:1px 5px;font-weight:500;}
+  .row{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;background:var(--surface);border-bottom:1px solid var(--border);font-size:13px;color:var(--text-1);}
+  .grouptitle{font-size:12px;color:var(--text-3);padding:14px 16px 6px;}
+  .switch{width:38px;height:22px;border-radius:999px;background:var(--accent);position:relative;flex:none;}
+  .switch i{position:absolute;right:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;}
+  .switch.off{background:var(--border-strong);}
+  .switch.off i{left:2px;right:auto;}
+  .chev{color:var(--text-3);}
+</style>
+</head>
+<body>
+  <h1>阅闻 · 新闻 App 外观稿</h1>
+  <p class="sub">清新简约风格 · Kotlin + Jetpack Compose · 列表/详情 · 收藏 · 搜索 · 离线缓存/已读</p>
+
+  <div class="legend">
+    <div class="group">配色 · 中性
+      <div class="row"><span class="sw" style="background:#FFFFFF"></span>表面白 #FFFFFF</div>
+      <div class="row"><span class="sw" style="background:#F4F5F3"></span>页面灰 #F4F5F3</div>
+      <div class="row"><span class="sw" style="background:#2C2C2A"></span>主文字 #2C2C2A</div>
+      <div class="row"><span class="sw" style="background:#5F5E5A"></span>次文字 #5F5E5A</div>
+    </div>
+    <div class="group">配色 · 强调（单一点缀）
+      <div class="row"><span class="sw" style="background:#1D9E75"></span>主强调 青绿 #1D9E75</div>
+      <div class="row"><span class="sw" style="background:#E1F5EE"></span>浅强调底 #E1F5EE</div>
+      <div class="row"><span class="sw" style="background:#5DCAA5"></span>强调描边 #5DCAA5</div>
+    </div>
+    <div class="group">字阶 & 圆角
+      <div class="row">标题 16 · 正文 13 · 辅助 12</div>
+      <div class="row">字重 400 / 600 两档</div>
+      <div class="row">圆角 12px（卡）· 22px（屏）· 30px（机身）</div>
+    </div>
+  </div>
+
+  <div class="phones">
+
+    <!-- 首页 -->
+    <div>
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="battery"><i></i></span></div>
+        <div class="topbar"><span class="name">阅闻</span>
+          <div style="display:flex;gap:12px;align-items:center">
+            <div class="catpill">推荐 <span style="font-size:10px;color:var(--text-3)">▾</span></div>
+            <svg width="19" height="19" viewBox="0 0 18 18" fill="none" stroke="#5F5E5A" stroke-width="1.3"><circle cx="8" cy="8" r="5"/><line x1="12" y1="12" x2="16" y2="16"/></svg>
+          </div>
+        </div>
+        <div class="dropdown">
+          <div class="catitem on">推荐</div><div class="catitem">科技</div>
+          <div class="catitem">财经</div><div class="catitem">设计</div>
+          <div class="catitem">国际</div><div class="catitem">体育</div>
+          <div class="catitem">娱乐</div><div class="catitem">更多</div>
+        </div>
+        <div class="card"><div style="flex:1"><div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;"><span class="badge">新</span><p class="t" style="margin:0">国产大模型集体开源：一份写给普通人的白话解读</p></div><p class="m">少数派 · 12分钟前</p></div><div class="thumb"></div></div>
+        <div class="card"><div style="flex:1"><p class="t">新款折叠屏手机续航实测：一天真的够用吗</p><p class="m">36氪 · 1小时前</p></div><div class="thumb"></div></div>
+        <div class="tabbar">
+          <div class="tab on"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 9 L10 3 L17 9 M5 8 V16 H15 V8"/></svg>首页</div>
+          <div class="tab"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 3 H14 V17 L10 14 L6 17 Z"/></svg>收藏</div>
+          <div class="tab"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="9" cy="9" r="5"/><line x1="13" y1="13" x2="17" y2="17"/></svg>搜索</div>
+          <div class="tab"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="10" cy="10" r="2.4"/><path d="M10 3 V5 M10 15 V17 M3 10 H5 M15 10 H17 M5 5 L6.4 6.4 M14 14 L15.4 15.4 M15 5 L13.6 6.4 M6 14 L4.6 15.4"/></svg>设置</div>
+        </div>
+      </div></div>
+      <p class="caption">① 首页信息流</p>
+    </div>
+
+    <!-- 详情 -->
+    <div>
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="battery"><i></i></span></div>
+        <div class="topbar">
+          <svg width="19" height="19" viewBox="0 0 18 18" fill="none" stroke="#2C2C2A" stroke-width="1.4"><path d="M11 4 L6 9 L11 14"/></svg>
+          <span style="font-size:15px;font-weight:600">文章</span>
+          <div style="display:flex;gap:15px;align-items:center">
+            <svg width="18" height="18" viewBox="0 0 18 18" class="bm" stroke-width="1.2"><path d="M5 3 H13 V15 L9 12 L5 15 Z"/></svg>
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#5F5E5A" stroke-width="1.3"><path d="M4 9 L9 4 L14 9 M6 8 V14 H12 V8"/></svg>
+          </div>
+        </div>
+        <div class="detail-pad">
+          <div class="hero"></div>
+          <p class="t">国产大模型集体开源：一份写给普通人的白话解读</p>
+          <p class="m" style="margin-bottom:13px">少数派 · 12分钟前 · 阅读约 6 分钟</p>
+          <p>过去一周，多家国内团队相继把自研大模型权重公开。对普通人来说，这意味着更强的免费工具会越来越多，从写作、翻译到写代码都能直接用。</p>
+          <p>本文用最直白的话，讲清楚这件事为什么重要、和你有什么关系。</p>
+          <div class="collectbtn">已收藏</div>
+        </div>
+      </div></div>
+      <p class="caption">② 文章详情</p>
+    </div>
+
+    <!-- 搜索 -->
+    <div>
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="battery"><i></i></span></div>
+        <div class="topbar"><span class="name">搜索</span><span style="font-size:13px;color:var(--accent)">取消</span></div>
+        <div class="searchbox"><svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="#5F5E5A" stroke-width="1.3"><circle cx="8" cy="8" r="5"/><line x1="12" y1="12" x2="16" y2="16"/></svg>搜索新闻、来源或关键词</div>
+        <p class="sectionlabel">最近搜索</p>
+        <div class="chips" style="padding-top:0"><span class="chip">人工智能</span><span class="chip">折叠屏</span><span class="chip">苹果发布会</span></div>
+        <p class="sectionlabel">热门</p>
+        <div class="hot"><span class="rank">1</span><div><p class="t" style="margin:0">大模型开源周全景梳理</p><p class="m">少数派 · 热搜</p></div></div>
+        <div class="hot"><span class="rank">2</span><div><p class="t" style="margin:0">折叠屏续航横评</p><p class="m">36氪 · 热搜</p></div></div>
+        <div class="hot"><span class="rank">3</span><div><p class="t" style="margin:0">极简 UI 设计原则</p><p class="m">V2EX · 热搜</p></div></div>
+        <div class="tabbar">
+          <div class="tab"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 9 L10 3 L17 9 M5 8 V16 H15 V8"/></svg>首页</div>
+          <div class="tab"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 3 H14 V17 L10 14 L6 17 Z"/></svg>收藏</div>
+          <div class="tab on"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="9" cy="9" r="5"/><line x1="13" y1="13" x2="17" y2="17"/></svg>搜索</div>
+          <div class="tab"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="10" cy="10" r="2.4"/><path d="M10 3 V5 M10 15 V17 M3 10 H5 M15 10 H17 M5 5 L6.4 6.4 M14 14 L15.4 15.4 M15 5 L13.6 6.4 M6 14 L4.6 15.4"/></svg>设置</div>
+        </div>
+      </div></div>
+      <p class="caption">③ 搜索</p>
+    </div>
+
+    <!-- 收藏 -->
+    <div>
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="battery"><i></i></span></div>
+        <div class="topbar"><span class="name">收藏</span><span style="font-size:13px;color:var(--text-2)">编辑</span></div>
+        <div class="card"><div style="flex:1"><p class="t">极简 UI 的 7 条原则，少即是多</p><p class="m">V2EX · 昨天</p></div><svg width="17" height="17" viewBox="0 0 18 18" class="bm" stroke-width="1.2"><path d="M5 3 H13 V15 L9 12 L5 15 Z"/></svg></div>
+        <div class="card"><div style="flex:1"><p class="t">央行最新信号：利率走向如何影响你的钱包</p><p class="m">财新 RSS · 2小时前</p></div><svg width="17" height="17" viewBox="0 0 18 18" class="bm" stroke-width="1.2"><path d="M5 3 H13 V15 L9 12 L5 15 Z"/></svg></div>
+        <div class="card"><div style="flex:1"><p class="t">国产大模型集体开源：一份写给普通人的白话解读</p><p class="m">少数派 · 12分钟前</p></div><svg width="17" height="17" viewBox="0 0 18 18" class="bm" stroke-width="1.2"><path d="M5 3 H13 V15 L9 12 L5 15 Z"/></svg></div>
+        <div class="tabbar">
+          <div class="tab"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 9 L10 3 L17 9 M5 8 V16 H15 V8"/></svg>首页</div>
+          <div class="tab on"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 3 H14 V17 L10 14 L6 17 Z"/></svg>收藏</div>
+          <div class="tab"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="9" cy="9" r="5"/><line x1="13" y1="13" x2="17" y2="17"/></svg>搜索</div>
+          <div class="tab"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="10" cy="10" r="2.4"/><path d="M10 3 V5 M10 15 V17 M3 10 H5 M15 10 H17 M5 5 L6.4 6.4 M14 14 L15.4 15.4 M15 5 L13.6 6.4 M6 14 L4.6 15.4"/></svg>设置</div>
+        </div>
+      </div></div>
+      <p class="caption">④ 收藏</p>
+    </div>
+
+    <!-- 设置 -->
+    <div>
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="battery"><i></i></span></div>
+        <div class="topbar"><span class="name">设置</span></div>
+        <div class="grouptitle">外观</div>
+        <div style="background:var(--surface)">
+          <div class="row"><span>深色模式</span><span class="switch off"><i></i></span></div>
+          <div class="row"><span>字体大小</span><span class="chev">标准 ›</span></div>
+        </div>
+        <div class="grouptitle">内容</div>
+        <div style="background:var(--surface)">
+          <div class="row"><span>新闻源管理</span><span class="chev">›</span></div>
+          <div class="row"><span>刷新频率</span><span class="chev">每 30 分钟 ›</span></div>
+          <div class="row"><span>仅 Wi-Fi 加载图片</span><span class="switch"><i></i></span></div>
+        </div>
+        <div class="grouptitle">通知</div>
+        <div style="background:var(--surface)">
+          <div class="row"><span>新内容提醒</span><span class="switch"><i></i></span></div>
+        </div>
+        <div class="grouptitle">存储与关于</div>
+        <div style="background:var(--surface)">
+          <div class="row"><span>清除缓存</span><span class="chev">12.4 MB ›</span></div>
+          <div class="row"><span>关于阅闻</span><span class="chev">v1.0.0 ›</span></div>
+        </div>
+      </div></div>
+      <p class="caption">⑤ 设置</p>
+    </div>
+
+  </div>
+</body>
+</html>

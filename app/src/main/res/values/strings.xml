@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">阅闻</string>
+
+    <!--
+      桌面图标名称的预设（对应 AndroidManifest 里的 Alias0..Alias7）。
+      ⚠️ 顺序必须与 ui/util/IconNames.kt 的列表、以及 manifest 里 alias 的后缀数字一一对应。
+      Android 不允许运行时改 label，所以这里提供的是「几个固定选项」，
+      而不是让用户随便填 —— 设置页会把这一点说清楚。
+    -->
+    <string name="icon_name_0">阅闻</string>
+    <string name="icon_name_1">阅闻新闻</string>
+    <string name="icon_name_2">阅闻阅读</string>
+    <string name="icon_name_3">每日阅闻</string>
+    <string name="icon_name_4">新闻速览</string>
+    <string name="icon_name_5">极简新闻</string>
+    <string name="icon_name_6">头条聚合</string>
+    <string name="icon_name_7">阅闻 RSS</string>
+</resources>

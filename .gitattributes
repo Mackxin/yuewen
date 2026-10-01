@@ -1,0 +1,50 @@
+# ============================================================
+# 阅闻 · .gitattributes
+#
+# 为什么不写这个文件会出事：
+# Windows 上 git 默认 core.autocrlf=true，提交时会把文本文件的行尾统一成 CRLF，
+# 别人 clone 下来工作区里就是 CRLF 版本。而 `gradlew` 是一个 **shell 脚本**，
+# 带着 CRLF 行尾在 macOS / Linux 上会直接报错：
+#
+#     ./gradlew: /bin/sh^M: bad interpreter: No such file or directory
+#
+# 所以：所有文本文件在**仓库里**统一存成 LF；Windows 批处理文件用 CRLF；
+# 二进制文件别做任何转换（否则 jar / 图片会被改坏）。
+# ============================================================
+
+# 默认：自动识别文本文件，仓库内统一 LF
+* text=auto eol=lf
+
+# Windows 批处理必须 CRLF，否则 cmd.exe 解析会出问题
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 明确固定这几个（它们是脚本，一旦被改成 CRLF 就废了）
+gradlew text eol=lf
+*.sh text eol=lf
+
+# 二进制：不做行尾转换，也不参与 diff
+*.jar binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.zip binary
+*.apk binary
+*.aab binary
+*.keystore binary
+*.jks binary
+
+# 配置与文档按文本处理
+*.kt text
+*.kts text
+*.java text
+*.xml text
+*.md text
+*.properties text
+*.pro text
+
+# 让 GitHub 的语言统计更准（避免把 HTML/CSS 算成项目主要语言）
+docs/*.html linguist-documentation

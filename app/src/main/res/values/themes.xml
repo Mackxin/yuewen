@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!--
+      主题父类只用来拿 Material3 的控件默认值；配色一律由 Compose 的 YuewenTheme 负责。
+      这里要显式指定的是「Compose 管不到的那几块」：窗口底色 + 两条系统栏。
+    -->
+    <style name="Theme.Yuewen" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- 窗口底色：冷启动首帧、以及系统栏透明时透出来的那一层颜色 -->
+        <item name="android:windowBackground">@color/yuewen_window_bg</item>
+        <item name="android:colorBackground">@color/yuewen_window_bg</item>
+
+        <!-- 两条系统栏直接用同一个底色，从此不会再有粉色/紫色色带 -->
+        <item name="android:statusBarColor">@color/yuewen_window_bg</item>
+        <item name="android:navigationBarColor">@color/yuewen_window_bg</item>
+
+        <!-- 浅色底 → 状态栏/导航栏图标用深色。
+             深色主题下会由 values-night 覆盖，且 Compose 每次切主题时会再校正一次
+             （见 YuewenTheme 里的 SideEffect），所以「跟随系统 / 手动浅色 / 手动深色」三种情况都不会出错的图标。 -->
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">true</item>
+    </style>
+</resources>

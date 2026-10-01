@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      窗口底色（浅色）。
+      ⚠️ 必须和 Compose 里的 L_Background 保持一致。
+      原因：状态栏 / 导航栏设成 transparent 后，那两条区域透出来的就是 windowBackground。
+      以前没显式指定，于是用了 Material3 默认主题的 #FFFBFE —— 那是带一点紫粉的白，
+      而 App 内容区是我们自己的 #F5F8F6（灰绿白），
+      结果顶部状态栏和底部导航栏各露出一条「粉色」色带（用户反馈的就是它）。
+    -->
+    <color name="yuewen_window_bg">#F5F8F6</color>
+</resources>

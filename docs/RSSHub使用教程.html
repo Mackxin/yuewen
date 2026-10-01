@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>阅闻 · RSSHub 使用教程</title>
+<style>
+  :root{
+    --primary:#0E9F76; --primary-dark:#0B7D5C; --primary-soft:#E6F5F0; --primary-line:#BFE5D8;
+    --indigo:#4356E0; --amber:#D98420;
+    --bg:#F5F8F6; --card:#FFFFFF; --ink:#132420; --ink2:#4A5C57; --ink3:#7C8C87;
+    --line:#E3EAE7; --code:#F1F5F3;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    line-height:1.75; font-size:16px; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:880px; margin:0 auto; padding:40px 22px 80px}
+  header.top{margin-bottom:34px}
+  .kicker{display:inline-block; font-size:13px; letter-spacing:.08em; color:var(--primary-dark);
+    background:var(--primary-soft); border:1px solid var(--primary-line); border-radius:999px; padding:4px 12px; margin-bottom:14px}
+  h1{font-size:32px; line-height:1.3; margin:0 0 10px; letter-spacing:-.01em}
+  .sub{color:var(--ink2); font-size:15px; margin:0}
+  h2{font-size:21px; margin:44px 0 14px; padding-left:12px; border-left:4px solid var(--primary); line-height:1.4}
+  h3{font-size:16.5px; margin:26px 0 8px}
+  p{margin:10px 0}
+  a{color:var(--primary-dark)}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:20px 22px; margin:16px 0;
+    box-shadow:0 1px 2px rgba(19,36,32,.04)}
+  .card.tight{padding:16px 18px}
+  .lead{font-size:16.5px; color:var(--ink2)}
+  .tldr{background:linear-gradient(180deg,#EAF8F3,#F7FCFA); border:1px solid var(--primary-line); border-radius:16px; padding:18px 20px; margin:18px 0}
+  .tldr b{color:var(--primary-dark)}
+  ol,ul{margin:10px 0 10px 4px; padding-left:22px}
+  li{margin:6px 0}
+  code{background:var(--code); border:1px solid var(--line); border-radius:6px; padding:1px 6px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:13.5px; color:#0B5E48}
+  pre{background:var(--code); border:1px solid var(--line); border-radius:12px; padding:14px 16px; overflow:auto; margin:12px 0}
+  pre code{background:none; border:none; padding:0; font-size:13.5px; line-height:1.7; color:#132420}
+  .flow{display:flex; align-items:stretch; gap:10px; margin:18px 0; flex-wrap:wrap}
+  .flow .box{flex:1 1 170px; background:#fff; border:1px solid var(--line); border-radius:14px; padding:14px 14px}
+  .flow .box .t{font-weight:600; font-size:14.5px; margin-bottom:4px}
+  .flow .box .d{font-size:13px; color:var(--ink2); line-height:1.6}
+  .flow .box.accent{background:var(--primary-soft); border-color:var(--primary-line)}
+  .flow .arw{display:flex; align-items:center; justify-content:center; color:var(--primary); font-size:20px; font-weight:700; padding:0 2px}
+  table{width:100%; border-collapse:collapse; margin:14px 0; font-size:14.5px}
+  th,td{text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:top}
+  th{background:var(--primary-soft); color:var(--primary-dark); font-weight:600; font-size:13.5px;
+    border-bottom:1px solid var(--primary-line)}
+  td code{font-size:13px}
+  tr:last-child td{border-bottom:none}
+  .steps{counter-reset:s; margin:14px 0}
+  .step{position:relative; padding:12px 16px 12px 52px; background:#fff; border:1px solid var(--line);
+    border-radius:14px; margin-bottom:10px}
+  .step::before{counter-increment:s; content:counter(s); position:absolute; left:14px; top:13px;
+    width:24px; height:24px; border-radius:50%; background:var(--primary); color:#fff;
+    display:flex; align-items:center; justify-content:center; font-size:13.5px; font-weight:600}
+  .step .st{font-weight:600; margin-bottom:3px; font-size:15px}
+  .step .sd{font-size:14px; color:var(--ink2)}
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:12px; margin:16px 0}
+  .plat{background:#fff; border:1px solid var(--line); border-radius:14px; padding:14px 16px}
+  .plat .pn{font-weight:600; margin-bottom:8px; display:flex; align-items:center; gap:8px; font-size:15px}
+  .dot{width:8px; height:8px; border-radius:50%; background:var(--primary); flex:none}
+  .plat dl{margin:0; font-size:13.5px}
+  .plat dt{color:var(--ink3); margin-top:8px; font-size:12.5px}
+  .plat dd{margin:2px 0 0; color:var(--ink2); word-break:break-all}
+  .warn{background:#FFF6EC; border:1px solid #F2D9BC; border-radius:14px; padding:14px 18px; margin:16px 0}
+  .warn b{color:#9A5A0B}
+  .tip{background:var(--primary-soft); border:1px solid var(--primary-line); border-radius:14px; padding:14px 18px; margin:16px 0}
+  .tip b{color:var(--primary-dark)}
+  .faq{border:1px solid var(--line); border-radius:14px; padding:0; overflow:hidden; margin:12px 0; background:#fff}
+  .faq summary{cursor:pointer; padding:13px 18px; font-weight:600; font-size:15px; list-style:none}
+  .faq summary::-webkit-details-marker{display:none}
+  .faq summary::before{content:"Q "; color:var(--primary); font-weight:700}
+  .faq[open] summary{border-bottom:1px solid var(--line)}
+  .faq .a{padding:12px 18px 16px; font-size:14.5px; color:var(--ink2)}
+  .pill{display:inline-block; font-size:12px; padding:1px 8px; border-radius:999px; background:#FFF1DF; color:#9A5A0B; border:1px solid #F2D9BC; margin-left:6px}
+  footer{margin-top:52px; padding-top:18px; border-top:1px solid var(--line); color:var(--ink3); font-size:13.5px}
+  @media (max-width:560px){
+    h1{font-size:25px} .wrap{padding:26px 15px 60px} .flow .arw{transform:rotate(90deg); width:100%}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <span class="kicker">阅闻 · v2.1 新功能</span>
+    <h1>用 RSSHub 订阅微博、知乎、B站这些「没有 RSS」的网站</h1>
+    <p class="sub">从零到订上一个微博账号，大约两分钟。看完这份就不会卡在「ID 去哪找」上了。</p>
+  </header>
+
+  <div class="tldr">
+    <b>先说结论（30 秒版）</b><br>
+    打开 <b>阅源</b> 页 → 点右上角那个 <b>网络图标</b> → 挑一条模板 → 把 ID 填进去 → 看到预览没问题 → 点订阅。<br>
+    找不到的站点，用页面里的「<b>自定义路由</b>」自己填一条路径 —— 这样 RSSHub 上千条路由你都能用。
+  </div>
+
+  <h2>一、RSSHub 是个什么东西</h2>
+  <p class="lead">一句话：<b>它是个「转接服务」，专门把没有 RSS 的网站，转成有 RSS 的。</b></p>
+  <p>微博、知乎、B站、小红书、抖音这些平台都是自己的 App 里看，不对外提供订阅地址。RSSHub 就干一件事：替你去把这些内容抓下来，按标准格式吐出来一个订阅地址。然后你把那个地址丢进任何阅读器，就能像订博客一样订它们。</p>
+  <p>所以它和阅闻不是竞争关系，而是<b>上下游</b>：</p>
+
+  <div class="flow">
+    <div class="box">
+      <div class="t">① 内容源</div>
+      <div class="d">微博某个账号<br>知乎热榜<br>B站某个 UP 主</div>
+    </div>
+    <div class="arw">→</div>
+    <div class="box accent">
+      <div class="t">② RSSHub（转接）</div>
+      <div class="d">把这些内容转成<br>一个标准 RSS 地址</div>
+    </div>
+    <div class="arw">→</div>
+    <div class="box">
+      <div class="t">③ 阅闻（阅读）</div>
+      <div class="d">订阅、分类、收藏<br>笔记、朗读、离线</div>
+    </div>
+  </div>
+
+  <p>关键点：<b>阅闻只负责「把地址拼对」，剩下全是它本来就有的能力。</b>订进来的微博和订进来的少数派，在同一张列表里排着，收藏夹、朗读、离线缓存全都能用 —— 这些恰恰是 RSSHub 给不了的。</p>
+
+  <h2>二、地址是怎么拼出来的（看懂这一条就懂全部）</h2>
+  <div class="card">
+    <p><b>实例地址 + 路由 = 订阅地址</b></p>
+<pre><code>https://rsshub.app  +  /weibo/user/1642909335
+= https://rsshub.app/weibo/user/1642909335</code></pre>
+    <ul>
+      <li><b>实例</b>：一台跑着 RSSHub 的服务器。默认用官方公共的 <code>rsshub.app</code>，也可以换成你自己搭的。</li>
+      <li><b>路由</b>：<code>/weibo/user/1642909335</code> 这样一段路径，决定「要哪个站点的哪份内容」。</li>
+    </ul>
+    <p class="sub">App 里你不需要手拼这个地址 —— 挑模板、填 ID，它替你拼。但下面会把这个地址显示出来，方便你复制去别处用。</p>
+  </div>
+
+  <h2>三、三步订上一个微博账号</h2>
+  <div class="steps">
+    <div class="step">
+      <div class="st">从「阅源」页进 RSSHub</div>
+      <div class="sd">底部点 <b>阅源</b> → 右上角那个 <b>网络图标</b>。或者在「我的阅源」列表上方那条 RSSHub 提示上点「去添加」。</div>
+    </div>
+    <div class="step">
+      <div class="st">挑模板，填 ID</div>
+      <div class="sd">页面按平台分好了组（微博 / 知乎 / B站 / 抖音 / 小红书 / 豆瓣 / 资讯 / 开发 / 社交）。点「某个用户的微博」，把你要追的 <b>UID</b> 填进去。每条下面都写了这个 ID 去哪复制。</div>
+    </div>
+    <div class="step">
+      <div class="st">看清预览，再点订阅</div>
+      <div class="sd">填完 ID 会自动测一遍，把 <b>源名、格式、文章数、最新几条标题</b> 摆出来。是你要的内容就点「订阅」；如果显示失败，换一个源或者等一会儿再试（多半是公共实例限流了）。</div>
+    </div>
+  </div>
+
+  <div class="tip">
+    <b>订阅之后在哪看？</b><br>
+    会归到以平台命名的分类里（比如「微博」）。回首页往下拉一下刷新，就在列表里了。想改名或换分类：<b>阅源 → 我的阅源</b>，点那一行就能改。
+  </div>
+
+  <h2>四、那些 ID 到底去哪找</h2>
+  <p class="lead">这一步 90% 的人会卡住。按下面这张表抄就行 —— App 里每条模板下面写的也是同样的内容。</p>
+
+  <div class="grid">
+    <div class="plat">
+      <div class="pn"><span class="dot"></span>微博</div>
+      <dl>
+        <dt>用户 UID（一串数字）</dt>
+        <dd>打开 ta 的微博主页 → 地址栏 <code>weibo.com/u/</code> 后面那串数字，例如 <code>1642909335</code></dd>
+        <dt>关键词</dt>
+        <dd>直接填词就行，中英文都行</dd>
+      </dl>
+    </div>
+    <div class="plat">
+      <div class="pn"><span class="dot"></span>知乎</div>
+      <dl>
+        <dt>用户 ID（不是昵称）</dt>
+        <dd>主页地址 <code>zhihu.com/people/</code> 后面那一段，例如 <code>excited-vczh</code></dd>
+        <dt>专栏 ID</dt>
+        <dd>专栏地址 <code>zhuanlan.zhihu.com/</code> 后面那一段，形如 <code>c_1129398137630167040</code></dd>
+      </dl>
+    </div>
+    <div class="plat">
+      <div class="pn"><span class="dot"></span>B站</div>
+      <dl>
+        <dt>UP 主 UID（一串数字）</dt>
+        <dd>UP 主主页地址 <code>space.bilibili.com/</code> 后面那串数字，例如 <code>2267573</code></dd>
+      </dl>
+    </div>
+    <div class="plat">
+      <div class="pn"><span class="dot"></span>抖音</div>
+      <dl>
+        <dt>sec_uid（很长一串）</dt>
+        <dd>抖音上点 ta 主页右上角「分享」→ 复制链接，链接里 <code>sec_uid=</code> 后面那 60 多位</dd>
+        <dt>话题</dt>
+        <dd>话题名，带不带 # 都行</dd>
+      </dl>
+    </div>
+    <div class="plat">
+      <div class="pn"><span class="dot"></span>小红书</div>
+      <dl>
+        <dt>用户 ID（24 位）</dt>
+        <dd>主页分享链接里 <code>user/profile/</code> 后面那 24 位字母数字</dd>
+      </dl>
+    </div>
+    <div class="plat">
+      <div class="pn"><span class="dot"></span>豆瓣</div>
+      <dl>
+        <dt>用户 ID</dt>
+        <dd>主页地址 <code>douban.com/people/</code> 后面那一段，例如 <code>ahbei</code></dd>
+      </dl>
+    </div>
+    <div class="plat">
+      <div class="pn"><span class="dot"></span>GitHub</div>
+      <dl>
+        <dt>仓库</dt>
+        <dd>填「作者/仓库名」，斜杠分开，例如 <code>DIYgod/RSSHub</code></dd>
+        <dt>某语言的趋势</dt>
+        <dd>英文小写语言名，例如 <code>kotlin</code>、<code>python</code></dd>
+      </dl>
+    </div>
+    <div class="plat">
+      <div class="pn"><span class="dot"></span>少数派 / 掘金</div>
+      <dl>
+        <dt>作者 ID</dt>
+        <dd>少数派：<code>sspai.com/author/</code> 后面那段<br>掘金：<code>juejin.cn/user/</code> 后面那串数字</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="tip">
+    <b>小技巧</b>：在手机浏览器里打开目标主页，地址栏里那一段能直接长按复制，比在 App 里翻设置快得多。
+  </div>
+
+  <h2>五、内置的模板都有哪些</h2>
+  <p class="sub">这 29 条是高频且核对过的。标「反爬强」的，公共实例上失败概率明显更高。</p>
+  <table>
+    <thead><tr><th style="width:74px">平台</th><th style="width:32%">用途</th><th>要填什么</th></tr></thead>
+    <tbody>
+      <tr><td>微博</td><td>热搜榜</td><td>不用填，直接订阅</td></tr>
+      <tr><td>微博</td><td>某个用户的微博</td><td>用户 UID<span class="pill">反爬强</span></td></tr>
+      <tr><td>微博</td><td>关键词搜索</td><td>关键词<span class="pill">反爬强</span></td></tr>
+      <tr><td>知乎</td><td>热榜 / 知乎日报</td><td>不用填</td></tr>
+      <tr><td>知乎</td><td>某个用户的动态</td><td>用户 ID<span class="pill">反爬强</span></td></tr>
+      <tr><td>知乎</td><td>专栏文章</td><td>专栏 ID</td></tr>
+      <tr><td>B站</td><td>全站排行榜</td><td>不用填</td></tr>
+      <tr><td>B站</td><td>UP 主投稿 / UP 主动态</td><td>UP 主 UID</td></tr>
+      <tr><td>抖音</td><td>某个用户的作品</td><td>sec_uid<span class="pill">反爬强</span></td></tr>
+      <tr><td>抖音</td><td>话题下的作品</td><td>话题名<span class="pill">反爬强</span></td></tr>
+      <tr><td>小红书</td><td>用户的笔记</td><td>24 位用户 ID<span class="pill">反爬强</span></td></tr>
+      <tr><td>豆瓣</td><td>正在上映 / 即将上映 / 新书速递</td><td>不用填</td></tr>
+      <tr><td>豆瓣</td><td>某个用户的广播</td><td>用户 ID<span class="pill">反爬强</span></td></tr>
+      <tr><td>资讯</td><td>少数派首页 / Matrix 社区</td><td>不用填</td></tr>
+      <tr><td>资讯</td><td>少数派某个作者</td><td>作者 ID</td></tr>
+      <tr><td>资讯</td><td>V2EX 最新主题 / 热门主题</td><td>不用填</td></tr>
+      <tr><td>开发</td><td>GitHub Trending（每日 / 指定语言）</td><td>语言名（可留空用每日）</td></tr>
+      <tr><td>开发</td><td>GitHub 仓库的 Issue / PR</td><td>作者/仓库名</td></tr>
+      <tr><td>开发</td><td>掘金全站热榜 / 某个作者的文章</td><td>作者 ID（热榜不用填）</td></tr>
+      <tr><td>社交</td><td>Telegram 公开频道</td><td>频道用户名（不带 @）</td></tr>
+    </tbody>
+  </table>
+
+  <h2>六、找不到的站点：用「自定义路由」</h2>
+  <p>模板只有二十几条，RSSHub 实际有 <b>上千条</b>。找不到的时候不用等我加 —— 自己填一条就行，功能完全一样。</p>
+  <div class="steps">
+    <div class="step">
+      <div class="st">去官网查路由</div>
+      <div class="sd">在 RSSHub 的「<a href="https://docs.rsshub.app" target="_blank" rel="noopener">路由大全</a>」里搜站点名（页面左上角有搜索框）。每条路由下面都会给一个示例地址。</div>
+    </div>
+    <div class="step">
+      <div class="st">照抄「斜杠后面」的部分</div>
+      <div class="sd">示例给的是 <code>https://rsshub.app/xxx/yyy/123</code>，你要填的是 <code>xxx/yyy/123</code> —— 也就是去掉域名那一截。</div>
+    </div>
+    <div class="step">
+      <div class="st">粘进「自定义路由」</div>
+      <div class="sd">在 RSSHub 页面上点那条蓝色的「自定义路由」卡片，把路径填进去。它会自动测一遍再让你订阅。</div>
+    </div>
+  </div>
+  <div class="tip">
+    <b>懒人模式</b>：整条地址直接粘进来也能用。App 会自动把 <code>https://rsshub.app</code> 这一截去掉，只留路由。路由末尾的 <code>?limit=20</code> 这类参数也会保留。
+  </div>
+
+  <h2>七、要不要换「实例」</h2>
+  <p>默认用的是官方公共实例 <code>rsshub.app</code>。它是完全免费的公共服务，所以有两个现实：</p>
+  <ul>
+    <li><b>有限流</b>。大概每小时 200 次请求 / IP，订得多 + 刷新得勤，就会开始取不到东西。</li>
+    <li><b>不一定随时可用</b>。官方文档自己都写了，它不适合长期重度依赖。</li>
+  </ul>
+  <p>所以这一页顶部那一条可以点「<b>切换</b>」：填一个你自己的实例地址，之后所有订阅都走它。自己搭一个不难 —— 有服务器的话用 Docker 一行命令，没有的话用 Vercel 一键部署（RSSHub 官网有部署文档）。搭建完之后把地址填进来就行，其他什么都不用改。</p>
+  <div class="warn">
+    <b>什么时候该考虑自建？</b> 如果你订了十几个源、每天都会刷新，或者发现「明明之前能用的路由突然全部失败」—— 那基本就是限流了，自建能一次性解决。
+  </div>
+
+  <h2>八、常见问题</h2>
+
+  <details class="faq" open>
+    <summary>测出来失败 / 一直是「取不到」，怎么办？</summary>
+    <div class="a">
+      按概率从高到低排查：<br>
+      ① <b>公共实例限流了</b> —— 最常见。等十几分钟再试，或者换个时间。<br>
+      ② <b>平台反爬</b> —— 微博、知乎、抖音、小红书本身就不欢迎抓取，偶尔成功偶尔失败是常态。<br>
+      ③ <b>这条路由失效了</b> —— 平台改版，RSSHub 的路由要跟着更新。去官网看看还有没有能用的替代路由。<br>
+      ④ <b>ID 填错了</b> —— 尤其知乎（要 <code>people</code> 后面那段，不是昵称）和小红书（要 24 位）。
+    </div>
+  </details>
+
+  <details class="faq">
+    <summary>为什么订进来的微博没有图片 / 只有文字？</summary>
+    <div class="a">
+      两种常见原因：源站图片做了防盗链（App 已经尽量兼容，个别图挂了不影响读正文），或者该平台对抓取做了限制，只给了部分字段。这不是阅闻的问题 —— 换任何阅读器都一样。
+    </div>
+  </details>
+
+  <details class="faq">
+    <summary>同一个账号我订了两次，会重复吗？</summary>
+    <div class="a">
+      不会。拼出来的地址一样时，App 会直接告诉你「这个地址已经在你的阅源里了」，按钮也会变成不可点。列表里同样按地址去重。
+    </div>
+  </details>
+
+  <details class="faq">
+    <summary>这些内容会存在哪？会上传吗？</summary>
+    <div class="a">
+      和其他阅源完全一样：抓回来的文章存在<b>你手机本地</b>的数据库里，不上传任何服务器。清除缓存只会删掉未收藏的文章与已缓存正文。唯一的外部请求是「向 RSSHub 实例要 RSS」这一步。
+    </div>
+  </details>
+
+  <details class="faq">
+    <summary>我把实例地址改回官方默认，怎么操作？</summary>
+    <div class="a">
+      实例那一行点「切换」，对话框里有一条「恢复默认（官方公共实例）」，点一下就回去了。App 里存的是「空 = 用默认」，所以以后官方换了默认实例，你会自动跟着走。
+    </div>
+  </details>
+
+  <footer>
+    阅闻 v2.2.0 · RSSHub 使用教程<br>
+    RSSHub 是开源项目（<a href="https://github.com/DIYgod/RSSHub" target="_blank" rel="noopener">GitHub</a>），路由大全见 <a href="https://docs.rsshub.app" target="_blank" rel="noopener">docs.rsshub.app</a>。<br>
+    <span style="opacity:.75">App 内使用手册（设置 →「使用手册」）还讲了列表排序、默认浏览器、标签栏等其余功能。</span>
+  </footer>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  阅闻是 RSS 阅读器，要读取任意第三方站点，这里必须放开明文 HTTP。
+
+  背景（v1.5.0 修的真实问题）：targetSdk ≥ 28 的系统默认禁止明文流量
+  （usesCleartextTraffic 默认 false），而中文 RSS 源里的图片链接大量还是
+  http:// 开头的 —— 结果就是「文章列表里一张图都没有，只有文字」，
+  部分 http 源甚至整个抓取失败。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

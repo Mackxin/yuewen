@@ -1,0 +1,61 @@
+# ============================================================
+# 阅闻 · .gitignore
+#
+# 原则：**构建产物、本机路径、密钥、IDE 配置一律不进仓库**。
+# 判断标准很简单 —— 「在别人电脑上重新生成一次就有了」的东西都不该提交。
+# ============================================================
+
+# ---------- Android / Gradle 构建产物 ----------
+*.iml
+.gradle/
+build/
+# 注意：app/build 这种子目录的产物
+*/build/
+captures/
+.externalNativeBuild/
+.cxx/
+release/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+bin/
+gen/
+out/
+lint/intermediates/
+lint/generated/
+lint/outputs/
+lint/tmp/
+
+# ---------- 本机专属配置（绝对不能提交）----------
+# local.properties 里写着你这台机器的 Android SDK 路径，
+# 提交上去别人 clone 下来会直接构建失败，而且会暴露你的目录结构。
+local.properties
+
+# 签名密钥：这是 App 的「身份证」，泄漏等于别人能伪造你的更新包
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+
+# ---------- IDE ----------
+.idea/
+*.hprof
+*.orig
+
+# ---------- 系统文件 ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- 日志 / 临时文件 ----------
+*.log
+*.tmp
+*.bak
+.navigation/
+
+# ---------- 离线测试的编译产物 ----------
+tools/jvmtest/.out/

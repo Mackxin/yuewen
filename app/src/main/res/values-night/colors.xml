@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 窗口底色（深色）。对应 Compose 里的 D_Background，同样是为了干掉 M3 默认的紫色调。 -->
+    <color name="yuewen_window_bg">#0F1512</color>
+</resources>

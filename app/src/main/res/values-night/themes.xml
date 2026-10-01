@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- 深色主题：底色换成 D_Background（见 values-night/colors.xml），图标改为浅色 -->
+    <style name="Theme.Yuewen" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/yuewen_window_bg</item>
+        <item name="android:colorBackground">@color/yuewen_window_bg</item>
+
+        <item name="android:statusBarColor">@color/yuewen_window_bg</item>
+        <item name="android:navigationBarColor">@color/yuewen_window_bg</item>
+
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
+    </style>
+</resources>
