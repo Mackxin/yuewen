@@ -26,7 +26,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Checklist
@@ -792,7 +791,13 @@ private fun HomeKeywordRow(
     }
 }
 
-/** 日期分组标题：一个小圆点 + 「今天 / 昨天 / 本周 / 更早」+ 条数。 */
+/**
+ * 日期分组标题：「今天 / 昨天 / 本周 / 更早」+ 条数。
+ *
+ * ⚠️ v2.6.0 去掉了原先摆在最前面的 6dp 主色小圆点（用户反馈：列表里到处都是紫色小点，去干净点）。
+ * 分组感现在只靠**排版**承担：SemiBold 的 labelLarge + 一行更小的条数 + 上下留白。
+ * 别再往回加装饰性圆点。
+ */
 @Composable
 private fun DayHeader(label: String, count: Int) {
     val cs = MaterialTheme.colorScheme
@@ -800,8 +805,6 @@ private fun DayHeader(label: String, count: Int) {
         modifier = Modifier.fillMaxWidth().padding(start = 4.dp, top = 14.dp, bottom = 9.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(Modifier.size(6.dp).clip(CircleShape).background(cs.primary))
-        Spacer(Modifier.width(8.dp))
         Text(
             label,
             style = MaterialTheme.typography.labelLarge,

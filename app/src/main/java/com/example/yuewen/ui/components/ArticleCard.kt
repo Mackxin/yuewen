@@ -71,7 +71,13 @@ enum class ArticleListMode(val key: String, val label: String) {
 }
 
 /**
- * 一条文章卡片。已读/未读通过「标题透明度 + 未读圆点」双重区分，一眼能看出哪些没看过。
+ * 一条文章卡片。已读/未读通过「标题透明度 + 字重」区分，一眼能看出哪些没看过。
+ *
+ * ⚠️ v2.6.0 起**去掉了标题左侧的未读圆点**。原先标题行里塞了「圆点 + 8/10dp 间隔」，
+ * 把标题整体往右推了 15dp，而下面的 `MetaLine`（来源 · 时间）没有这层缩进 ——
+ * 结果标题和它下面的来源时间左边缘对不齐，看着别扭。
+ * 去掉圆点后两者自然对齐，未读状态改由**标题透明度 + 字重**承担（紧凑模式还有一层极淡主色底）。
+ * 别再往标题行左边加装饰性元素，否则错位问题会重现。
  *
  * v2.0 新增 [selectionMode] / [selected]：批量管理时左侧多一个勾选框。
  * 勾选框放在**卡片外面**（外层 Row），卡片本体完全不动 ——
@@ -195,8 +201,6 @@ private fun CompactCard(
             modifier = Modifier.fillMaxWidth().padding(start = 13.dp, end = 4.dp, top = 9.dp, bottom = 9.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            UnreadDot(visible = !article.isRead)
-            Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     highlightedTitle(article.title, highlight),
@@ -261,18 +265,17 @@ private fun StandardCard(
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    UnreadDot(visible = !article.isRead)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        highlightedTitle(article.title, highlight),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = if (article.isRead) FontWeight.Normal else FontWeight.SemiBold,
-                        color = titleColor,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+                // v2.6.0：原先这里包了一层 Row 用来放未读圆点，标题被整体推右 15dp，
+                // 而下面的 MetaLine 没有这层缩进 —— 来源·时间的左边缘比标题更靠左，错位。
+                // 圆点去掉后直接放 Text，标题与来源·时间共用同一个左边缘。
+                Text(
+                    highlightedTitle(article.title, highlight),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = if (article.isRead) FontWeight.Normal else FontWeight.SemiBold,
+                    color = titleColor,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
                 MetaLine(article, metaColor)
             }
             if (!article.imageUrl.isNullOrBlank()) {
@@ -360,10 +363,6 @@ private fun MagazineCard(
             }
             Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
                 Row(verticalAlignment = Alignment.Top) {
-                    if (!hasImage) {
-                        UnreadDot(visible = !article.isRead)
-                        Spacer(Modifier.width(8.dp))
-                    }
                     Text(
                         highlightedTitle(article.title, highlight),
                         style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, lineHeight = 24.sp),
@@ -385,17 +384,6 @@ private fun MagazineCard(
 }
 
 // ---------------- 复用零件 ----------------
-
-@Composable
-private fun UnreadDot(visible: Boolean) {
-    val cs = MaterialTheme.colorScheme
-    Box(
-        modifier = Modifier
-            .size(7.dp)
-            .clip(CircleShape)
-            .background(if (visible) cs.primary else Color.Transparent)
-    )
-}
 
 @Composable
 private fun MetaLine(article: Article, color: Color, modifier: Modifier = Modifier) {
