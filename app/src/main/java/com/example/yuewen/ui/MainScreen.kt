@@ -89,8 +89,8 @@ fun MainScreen() {
     // 记住列表实例：原来每次重组都新建一份，白白带着底栏一起重组
     val tabs = remember { Screen.bottomTabs() }
 
-    // v2.6：液态玻璃开关（设置 → 外观）。底栏 / 首页顶栏 / 闻件标签栏共用这一个标志。
-    val glass by app.settingsRepository.glassUiFlow.collectAsStateWithLifecycle(true)
+    // v2.7：「液态玻璃」整套设计语言已按用户要求撤掉（Glass / GlassSurface 两个文件一并删除），
+    // 这里不再有 glass 开关，顶栏与闻件标签栏都退回实色。
 
     /**
      * v2.6：系统导航栏的高度（键盘弹起时算 0）。
@@ -283,10 +283,27 @@ fun MainScreen() {
             // 其余页面（阅源 / 设置）在窗口里补一层状态栏留白：沉浸式之后窗口不再自动避让，
             // 不补的话标题会被状态栏压住。
             val immersive = tabs[page] == Screen.Home || tabs[page] == Screen.Wenjian
+
+            /**
+             * v2.7：这一页的内容要不要「画到屏幕最底边、从透明底栏后面穿过去」。
+             *
+             * 底栏从此没有自己的底色（用户要求「保留四个按钮、之外全部透明」）。
+             * 但**只有列表里出现白色卡片时**才看得出差别 —— 卡片是 `surface`（纯白），
+             * 底栏区域是 `background`，两者相接就是一道明显的分界，看着像「底栏有灰底」。
+             *
+             * 所以：
+             * - 首页 / 闻件 —— 列表是白色卡片（ArticleCard），必须穿透。它们不能在这里压
+             *   `padding(bottom)`（压了就穿不过去），改由各自列表的 `contentPadding` 留白，
+             *   见各页的 `bottomInset` 参数。少了那一步，最后一张卡片会被底栏压住。
+             * - 阅源 / 设置 —— 整页都是 `background` 底色、没有卡片，底栏区域和内容本来就同色，
+             *   看不出分界。保持原来的 `padding` 即可：改动最小，也顺带不会漏掉哪条列表。
+             */
+            val penetrate = tabs[page] == Screen.Home || tabs[page] == Screen.Wenjian
+
             Box(
                 Modifier
                     .fillMaxSize()
-                    .padding(bottom = contentInset)
+                    .then(if (penetrate) Modifier else Modifier.padding(bottom = contentInset))
                     .then(if (immersive) Modifier else Modifier.statusBarsPadding())
             ) {
                 when (tabs[page]) {
@@ -295,9 +312,13 @@ fun MainScreen() {
                         onOpenArticle = openArticle,
                         // v2.4：顶栏放大镜 → 全屏搜索浮层
                         onOpenSearch = { showSearch = true },
-                        glass = glass
+                        bottomInset = contentInset
                     )
-                    Screen.Wenjian -> WenjianScreen(app = app, onOpenArticle = openArticle, glass = glass)
+                    Screen.Wenjian -> WenjianScreen(
+                        app = app,
+                        onOpenArticle = openArticle,
+                        bottomInset = contentInset
+                    )
                     Screen.Sources -> SourcesScreen(
                         app = app,
                         onOpenAddSource = { showAddSource = true },

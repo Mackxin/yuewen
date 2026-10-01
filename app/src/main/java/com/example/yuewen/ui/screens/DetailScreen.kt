@@ -78,7 +78,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -1262,11 +1261,10 @@ private fun ChoiceRow(
                 Surface(
                     onClick = { onSelect(index) },
                     shape = MaterialTheme.shapes.extraSmall,
-                    color = if (sel) cs.primary.copy(alpha = 0.16f) else Color.Transparent,
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        if (sel) cs.primary else cs.outlineVariant
-                    )
+                    // v2.7：去掉描边（用户要求「全部按钮的边框去掉，有高亮的也不要边框」）。
+                    // 未选中原来靠描边才看得出是个按钮，现在改回一层浅底 ——
+                    // 否则去掉边框后它就只剩一行字，连点不点得动都看不出来。
+                    color = if (sel) cs.primary.copy(alpha = 0.16f) else cs.surfaceContainerHigh
                 ) {
                     Text(
                         text,

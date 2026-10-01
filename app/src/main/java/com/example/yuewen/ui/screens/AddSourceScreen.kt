@@ -231,7 +231,7 @@ fun AddSourceScreen(app: YuewenApplication, onBack: () -> Unit) {
                     Surface(
                         color = cs.surface,
                         shape = MaterialTheme.shapes.medium,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, cs.outlineVariant),
+                        // v2.7：去掉 1dp 描边（用户要求「全部按钮的边框去掉」）
                         modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)
                             .clickable {
                                 dismissIme()

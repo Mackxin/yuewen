@@ -35,7 +35,8 @@ fun CategoryDropdown(
         Surface(
             onClick = { expanded = true },
             shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
-            border = androidx.compose.foundation.BorderStroke(0.5.dp, cs.outline),
+            // v2.7：去掉那圈 0.5dp 描边（用户要求「全部按钮的边框去掉」）。
+            // 底色是 surface（纯白），在 background 上本来就分得清，不需要再描边。
             color = cs.surface
         ) {
             Row(

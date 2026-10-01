@@ -4,7 +4,6 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -188,8 +187,10 @@ private fun ChoiceRow(
                 Surface(
                     onClick = { onSelect(index) },
                     shape = MaterialTheme.shapes.extraSmall,
-                    color = if (sel) cs.primary.copy(alpha = 0.16f) else cs.surfaceContainerHigh,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, if (sel) cs.primary else cs.outlineVariant)
+                    // v2.7：去掉选中/未选中的描边（用户要求「全部按钮的边框去掉，
+                    // 有高亮的也不要边框」）。选中态改由**底色差**承担：
+                    // 主色 16% 的底 + 主色文字，对比原来的浅灰底是很明显的。
+                    color = if (sel) cs.primary.copy(alpha = 0.16f) else cs.surfaceContainerHigh
                 ) {
                     Text(
                         text,
@@ -447,12 +448,7 @@ private fun PaletteSwatch(
             modifier = Modifier
                 .size(38.dp)
                 .clip(CircleShape)
-                .background(color)
-                .border(
-                    width = if (selected) 3.dp else 1.dp,
-                    color = if (selected) cs.primary else cs.outlineVariant,
-                    shape = CircleShape
-                ),
+                .background(color),
             contentAlignment = Alignment.Center
         ) {
             if (selected) {
@@ -580,8 +576,7 @@ fun SettingsScreen(
     val homeShowLayout by vm.homeShowLayout.collectAsStateWithLifecycle()
     val homeShowRefresh by vm.homeShowRefresh.collectAsStateWithLifecycle()
     val homeShowSubtitle by vm.homeShowSubtitle.collectAsStateWithLifecycle()
-    // v2.6：液态玻璃开关
-    val glassUi by vm.glassUi.collectAsStateWithLifecycle()
+    // v2.7：液态玻璃开关已随整套设计语言一起删除（见 SettingsRepository 注释）
     val ttsNotify by vm.ttsNotify.collectAsStateWithLifecycle()
     val guideSeen by vm.guideSeen.collectAsStateWithLifecycle()
     // v2.0.2 / v2.5：首页那两行筛选项各自的开关 + 打开时默认停在哪儿
@@ -826,7 +821,6 @@ fun SettingsScreen(
                             Surface(
                                 onClick = { vm.setTheme(v) },
                                 color = if (sel) cs.primary.copy(alpha = 0.16f) else cs.surfaceContainerHigh,
-                                border = androidx.compose.foundation.BorderStroke(1.dp, if (sel) cs.primary else cs.outlineVariant),
                                 shape = MaterialTheme.shapes.extraSmall
                             ) {
                                 Text(
@@ -839,17 +833,6 @@ fun SettingsScreen(
                         }
                     }
                 }
-                Div()
-                // ---- v2.6：液态玻璃 ----
-                SettingsRow(
-                    "液态玻璃",
-                    trailing = { Switch(checked = glassUi, onCheckedChange = { vm.setGlassUi(it) }) }
-                )
-                Caption(
-                    "首页顶栏、闻件标签栏换成半透明 + 受光渐变的玻璃质感；关掉退回原来的实色。\n" +
-                        "底栏不在这里 —— 它按你的要求做成了「没有自己的底」，直接露出页面背景，" +
-                        "只留图标文字和高亮块，所以这个开关对它没有影响。"
-                )
                 Div()
                 // ---- v2.3：配色方案 ----
                 // 点一下立刻换色，不需要「应用」按钮（MainActivity 直接订阅这个值）。

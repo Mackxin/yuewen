@@ -47,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -66,7 +67,7 @@ private const val DEFAULT_FOLDER = "默认"
  * 统一管 Tab，这里只负责「收藏」这一件事，顶部那行只留「管理收藏夹」入口。
  */
 @Composable
-fun BookmarksPane(app: YuewenApplication, onOpenArticle: (String) -> Unit) {
+fun BookmarksPane(app: YuewenApplication, onOpenArticle: (String) -> Unit, bottomInset: Dp = 0.dp) {
     val vm: BookmarksViewModel = viewModel(factory = BookmarksViewModel.provide(app))
     val list by vm.bookmarks.collectAsStateWithLifecycle()
     val folders by vm.folders.collectAsStateWithLifecycle()
@@ -124,7 +125,7 @@ fun BookmarksPane(app: YuewenApplication, onOpenArticle: (String) -> Unit) {
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                contentPadding = PaddingValues(top = 6.dp, bottom = 16.dp)
+                contentPadding = PaddingValues(top = 6.dp, bottom = bottomInset + 16.dp)
             ) {
                 items(list, key = { it.link }) { a ->
                     ArticleCard(
@@ -169,7 +170,7 @@ fun BookmarksPane(app: YuewenApplication, onOpenArticle: (String) -> Unit) {
 
 /** 「闻件 → 历史」这一栏。 */
 @Composable
-fun HistoryPane(app: YuewenApplication, onOpenArticle: (String) -> Unit) {
+fun HistoryPane(app: YuewenApplication, onOpenArticle: (String) -> Unit, bottomInset: Dp = 0.dp) {
     val vm: BookmarksViewModel = viewModel(factory = BookmarksViewModel.provide(app))
     val history by vm.history.collectAsStateWithLifecycle()
     val cs = MaterialTheme.colorScheme
@@ -203,7 +204,7 @@ fun HistoryPane(app: YuewenApplication, onOpenArticle: (String) -> Unit) {
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp)
+                contentPadding = PaddingValues(top = 4.dp, bottom = bottomInset + 16.dp)
             ) {
                 items(history, key = { it.link }) { a ->
                     ArticleCard(

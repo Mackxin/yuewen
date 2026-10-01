@@ -2,10 +2,13 @@ package com.example.yuewen.ui.screens
 
 import android.content.Intent
 import android.widget.Toast
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,12 +29,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MarkEmailUnread
@@ -65,16 +70,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -86,7 +94,6 @@ import com.example.yuewen.ui.components.ArticleCard
 import com.example.yuewen.ui.components.ArticleListMode
 import com.example.yuewen.ui.components.EmptyState
 import com.example.yuewen.ui.components.FolderPickerDialog
-import com.example.yuewen.ui.components.GlassSurface
 import com.example.yuewen.ui.util.BrowserLauncher
 import com.example.yuewen.ui.util.formatRelativeTime
 import com.example.yuewen.ui.util.titleOrDefault
@@ -117,7 +124,7 @@ fun HomeScreen(
     app: YuewenApplication,
     onOpenArticle: (String) -> Unit,
     onOpenSearch: () -> Unit = {},
-    glass: Boolean = false
+    bottomInset: Dp = 0.dp
 ) {
     val vm: HomeViewModel = viewModel(factory = HomeViewModel.provide(app))
     val categories by vm.categories.collectAsStateWithLifecycle()
@@ -172,6 +179,12 @@ fun HomeScreen(
     var selectedLinks by remember { mutableStateOf<Set<String>>(emptySet()) }
     var batchFolderTarget by remember { mutableStateOf(false) }
 
+    // ---- v2.7：日期分组折叠 ----
+    // 存的是**被折叠的分组名**（「今天」「昨天」「本周」「更早」），不是下标 ——
+    // 下标会随筛选 / 刷新而变，那样折叠状态会莫名其妙地跑到别的分组上去。
+    // 有意只放在内存里：重启后回到「全部展开」是更好预期的行为，也省掉一个设置项。
+    var collapsedDays by remember { mutableStateOf<Set<String>>(emptySet()) }
+
     val exitSelection = {
         selectionMode = false
         selectedLinks = emptySet()
@@ -192,10 +205,14 @@ fun HomeScreen(
         var topBarTotal by remember { mutableStateOf(statusBarTop + 70.dp) }
         val listTop = topBarTotal
 
-        // ---------------- 顶栏：悬浮在列表之上的玻璃层 ----------------
+        // ---------------- 顶栏：悬浮在列表之上的一条同色底 ----------------
         // 形状用矩形而不是胶囊：顶栏是贴边的，带圆角反而会露出底下的内容。
         // `statusBarsPadding` 折进 measure 里（而不是再套一层 Column）：
         // 这样量到的就是「含状态栏」的总高，正好等于列表要留的空白。
+        //
+        // v2.7：撤掉「液态玻璃」，退回一层**和页面同色**的实底。
+        // 必须有不透明底色 —— 列表是从屏幕最顶端开始画的，内容会从它下面穿过，
+        // 没有这层底的话标题会和文章文字叠在一起。
         //
         // ⚠️⚠️ v2.6.0 的坑：这个顶栏**必须画在列表之上**（`zIndex(1f)`）。
         // 它是在 Box 里先于列表声明的，而 Compose 的绘制与命中测试都按**声明顺序的逆序**走 ——
@@ -205,15 +222,12 @@ fun HomeScreen(
         //   ② 顶栏右侧那排图标（放大镜 / 多选 / 筛选 / 全标已读 / 布局 / 刷新）
         //      的点击**全被列表吃掉**，按了没反应。
         // 而不是把顶栏整段挪到列表后面 —— 那样 diff 太大，加个 `zIndex` 是等效且最小的修法。
-        GlassSurface(
-            glass = glass,
-            shape = RectangleShape,
-            // 关掉玻璃时用页面底色：v2.5 及以前的顶栏本来就是「和页面同色的一条」，
-            // 不传的话会变成 surfaceContainer 色块，等于偷偷改了外观。
-            solidColor = cs.background,
-            // v2.6.0：用户要求去掉那圈 1dp 高光描边
-            showBorder = false,
-            modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter).zIndex(1f)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.TopCenter)
+                .zIndex(1f)
+                .background(cs.background)
         ) {
             val measure = Modifier
                 .onGloballyPositioned { coords ->
@@ -276,8 +290,13 @@ fun HomeScreen(
                                 },
                                 style = MaterialTheme.typography.labelSmall,
                                 color = cs.onSurfaceVariant,
-                                // 顶栏最多挂 5 个图标，标题区被压窄；宁可省略号也不要折行把顶栏顶高
-                                maxLines = 1,
+                                // v2.7：用户要求副标题显示完整、不要三个点。
+                                // 顶栏右侧那排图标改窄（6 × 36dp）之后标题区宽了不少，
+                                // 「更新于 5 分钟前 · 36 篇未读」这类文案一行放不下时折第二行就行 ——
+                                // 顶栏高度是**实测**后喂给列表 contentPadding 的（见 topBarTotal），
+                                // 所以这里折行不会把内容顶掉，只会让列表的顶部留白自动长高。
+                                // 保留 Ellipsis 只是给极端长文案兜底，正常用不到。
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
@@ -289,29 +308,28 @@ fun HomeScreen(
                     // 返回键/返回箭头直接回到刚才的首页。
                     // 放在图标组的**最前面**：它是这一排里唯一的「主操作」，
                     // 而且右侧那几枚（布局 / 刷新）位置早就固定了，别去动它们。
-                    IconButton(
-                        onClick = onOpenSearch,
-                        modifier = Modifier.size(40.dp)
-                    ) {
-                        Icon(
-                            Icons.Filled.Search,
-                            contentDescription = "搜索文章",
-                            tint = cs.primary
-                        )
-                    }
+                    TopBarIcon(
+                        icon = Icons.Filled.Search,
+                        contentDescription = "搜索文章",
+                        tint = cs.primary,
+                        onClick = onOpenSearch
+                    )
 
                     // 批量管理入口
-                    IconButton(
-                        onClick = { selectionMode = true },
-                        modifier = Modifier.size(40.dp)
-                    ) {
-                        Icon(Icons.Filled.Checklist, contentDescription = "批量管理", tint = cs.onSurfaceVariant)
-                    }
+                    TopBarIcon(
+                        icon = Icons.Filled.Checklist,
+                        contentDescription = "批量管理",
+                        tint = cs.onSurfaceVariant,
+                        onClick = { selectionMode = true }
+                    )
 
                     // ---- v1.8：把原来那两排「全部 / 仅看未读」胶囊 + 「全部标为已读」按钮，
                     //      收成顶栏里的两个图标（放在布局按钮左边）。整组可在设置里隐藏。 ----
                     if (showFilterIcons) {
-                        IconButton(
+                        TopBarIcon(
+                            icon = if (unreadOnly) Icons.Filled.FilterAlt else Icons.Outlined.FilterAlt,
+                            contentDescription = if (unreadOnly) "当前仅看未读，点击查看全部" else "当前显示全部，点击仅看未读",
+                            tint = if (unreadOnly) cs.primary else cs.onSurfaceVariant,
                             onClick = {
                                 val next = !unreadOnly
                                 vm.setUnreadOnly(next)
@@ -320,53 +338,39 @@ fun HomeScreen(
                                     if (next) "仅看未读" else "显示全部",
                                     Toast.LENGTH_SHORT
                                 ).show()
-                            },
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                if (unreadOnly) Icons.Filled.FilterAlt else Icons.Outlined.FilterAlt,
-                                contentDescription = if (unreadOnly) "当前仅看未读，点击查看全部" else "当前显示全部，点击仅看未读",
-                                tint = if (unreadOnly) cs.primary else cs.onSurfaceVariant
-                            )
-                        }
-                        IconButton(
-                            onClick = { vm.markAllRead() },
+                            }
+                        )
+                        TopBarIcon(
+                            icon = Icons.Filled.DoneAll,
+                            contentDescription = "全部标为已读",
+                            // 没有 Material 的 disabled 着色兜底了，得手动压暗
+                            tint = if (unread > 0) cs.onSurfaceVariant else cs.onSurfaceVariant.copy(alpha = 0.38f),
                             enabled = unread > 0,
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                Icons.Filled.DoneAll,
-                                contentDescription = "全部标为已读",
-                                // 自己指定 tint 就不会走 IconButton 的 disabled 着色，得手动压暗
-                                tint = if (unread > 0) cs.onSurfaceVariant else cs.onSurfaceVariant.copy(alpha = 0.38f)
-                            )
-                        }
+                            onClick = { vm.markAllRead() }
+                        )
                     }
 
                     // 布局切换：紧凑 → 卡片 → 杂志 循环
                     if (showLayoutBtn) {
-                        IconButton(
+                        TopBarIcon(
+                            icon = mode.icon(),
+                            contentDescription = "切换列表布局",
+                            tint = cs.onSurfaceVariant,
                             onClick = {
                                 vm.cycleListMode()
                                 Toast.makeText(context, "布局：${mode.next().label}", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                mode.icon(),
-                                contentDescription = "切换列表布局",
-                                tint = cs.onSurfaceVariant
-                            )
-                        }
+                            }
+                        )
                     }
                     if (showRefreshBtn) {
-                        IconButton(onClick = vm::refresh, enabled = !isRefreshing, modifier = Modifier.size(40.dp)) {
-                            if (isRefreshing) {
-                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = cs.primary)
-                            } else {
-                                Icon(Icons.Filled.Refresh, contentDescription = "刷新", tint = cs.primary)
-                            }
-                        }
+                        TopBarIcon(
+                            icon = Icons.Filled.Refresh,
+                            contentDescription = "刷新",
+                            tint = cs.primary,
+                            enabled = !isRefreshing,
+                            loading = isRefreshing,
+                            onClick = vm::refresh
+                        )
                     }
                 }
             }
@@ -381,6 +385,33 @@ fun HomeScreen(
         // v2.6：列表从屏幕最顶端开始画（不再被顶栏挤下去），顶部留白改由 contentPadding 出。
         // 这是「沉浸式」的关键一步 —— 内容往上滚时会从玻璃顶栏和状态栏下面穿过去。
         val pullState = rememberPullToRefreshState()
+
+        // v2.7：日期分组折叠 —— 先按折叠状态把 rows 过一遍。
+        // `rows` 是「Header + 它名下的一串 Item」的展平列表（见 HomeViewModel.groupByDay），
+        // 所以折叠一个分组 = 留下它的 Header、把它后面那段 Item 丢掉，直到遇到下一个 Header 才恢复。
+        // 一个都没折叠时直接返回原列表 —— 不白造一遍对象。
+        //
+        // ⚠️ 必须在这里算，**不能**挪进 `LazyColumn { }` 里面：LazyColumn 的 content 是
+        // `LazyListScope.() -> Unit`，不是 @Composable 作用域，`remember` 放进去直接编译不过。
+        val visibleRows = remember(rows, collapsedDays) {
+            if (collapsedDays.isEmpty()) {
+                rows
+            } else {
+                val out = ArrayList<HomeRow>(rows.size)
+                var hidden = false
+                for (row in rows) {
+                    when (row) {
+                        is HomeRow.Header -> {
+                            hidden = row.label in collapsedDays
+                            out.add(row)
+                        }
+                        is HomeRow.Item -> if (!hidden) out.add(row)
+                    }
+                }
+                out
+            }
+        }
+
         PullToRefreshBox(
             state = pullState,
             isRefreshing = isRefreshing,
@@ -406,7 +437,10 @@ fun HomeScreen(
                         state = listState,
                         modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
                         // v2.6：顶部留白 = 状态栏 + 顶栏。内容因此会从顶栏和状态栏下面穿过去。
-                        contentPadding = PaddingValues(top = listTop + 2.dp, bottom = 20.dp)
+                        // v2.7：底部留白改由 [bottomInset] 承担 —— 底栏从此**没有自己的底色**，
+                        // 列表要一直画到屏幕最底边、从底栏后面穿过去；但滚到最后一项时
+                        // 得留出一段空白，否则最后一张卡片会被底栏压住看不见。
+                        contentPadding = PaddingValues(top = listTop + 2.dp, bottom = bottomInset + 20.dp)
                     ) {
                         // ---------------- 筛选胶囊（分类 / 阅源 / 关键词）----------------
                         // v2.6：整组从「常驻顶栏」搬进列表，变成**第一项**，跟着内容一起滚走。
@@ -452,13 +486,27 @@ fun HomeScreen(
                                 }
                             }
                         }
+                        // 注：按折叠状态过滤后的 [visibleRows] 是在 LazyColumn **外面**算好的
+                        //（见 `val pullState = ...` 那一段下面的定义）。
+                        // 这里已经是 `LazyListScope`，**不是 @Composable 作用域** —— 放进来会编译不过。
                         items(
-                            items = rows,
+                            items = visibleRows,
                             key = { it.key },
                             contentType = { if (it is HomeRow.Header) "header" else "article" }
                         ) { row ->
                             when (row) {
-                                is HomeRow.Header -> DayHeader(row.label, row.count)
+                                is HomeRow.Header -> DayHeader(
+                                    label = row.label,
+                                    count = row.count,
+                                    collapsed = row.label in collapsedDays,
+                                    onToggle = {
+                                        collapsedDays = if (row.label in collapsedDays) {
+                                            collapsedDays - row.label
+                                        } else {
+                                            collapsedDays + row.label
+                                        }
+                                    }
+                                )
                                 is HomeRow.Item -> {
                                     val article = row.article
                                     val link = article.link
@@ -608,6 +656,68 @@ fun HomeScreen(
                 Toast.makeText(context, "已把 $n 篇移到「$folder」", Toast.LENGTH_SHORT).show()
             }
         )
+    }
+}
+
+// ---------------- 顶栏图标位（v2.7 收窄） ----------------
+
+/** 顶栏单个图标的**槽位**宽度（图标 + 两侧留白）。 */
+private val TOP_ICON_SLOT = 36.dp
+
+/** 顶栏图标本身的尺寸。槽位 − 图标 = 相邻两个图标的空隙。 */
+private val TOP_ICON_SIZE = 22.dp
+
+/**
+ * 顶栏图标位。
+ *
+ * 原先用的是 Material 的 [IconButton]。它内部挂了 `minimumInteractiveComponentSize`，
+ * 会把**布局尺寸**强制撑到 48dp —— 哪怕外面写了 `Modifier.size(40.dp)` 也不管用。
+ * 一排 6 个图标就是这么吃掉 288dp 的，比标题区还宽，用户反馈「左右距离太开」。
+ *
+ * 换成裸 [Box] + `clickable` 后槽位宽度完全由 [TOP_ICON_SLOT] 决定：
+ * 每格 36dp、图标 22dp，相邻图标的空隙从 24dp 收到 14dp，整排省下约 60dp 让给标题。
+ *
+ * 两个刻意的选择：
+ * - `indication = null`：不用 `Surface(onClick)`，它会叠一层 ripple 灰块，
+ *   压在这条浅色顶栏上很脏（底栏 / 标签栏也是同样的理由）。
+ * - [loading] 为真时把图标换成转圈 —— 只有刷新按钮用得上。
+ *
+ * ⚠️ 槽位小于 48dp 意味着触摸目标小于 Material 推荐值。这是为了紧凑做的取舍，
+ * 36dp 在手机上仍然点得中；真要有人反馈点不中，调大 [TOP_ICON_SLOT] 就行。
+ */
+@Composable
+private fun TopBarIcon(
+    icon: ImageVector,
+    contentDescription: String,
+    tint: Color,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    loading: Boolean = false
+) {
+    val interaction = remember { MutableInteractionSource() }
+    Box(
+        modifier = Modifier
+            .size(TOP_ICON_SLOT)
+            .clip(CircleShape)
+            .clickable(
+                enabled = enabled,
+                interactionSource = interaction,
+                indication = null,
+                role = Role.Button,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        if (loading) {
+            CircularProgressIndicator(modifier = Modifier.size(17.dp), strokeWidth = 2.dp, color = tint)
+        } else {
+            Icon(
+                icon,
+                contentDescription = contentDescription,
+                tint = tint,
+                modifier = Modifier.size(TOP_ICON_SIZE)
+            )
+        }
     }
 }
 
@@ -809,12 +919,40 @@ private fun HomeKeywordRow(
  * ⚠️ v2.6.0 去掉了原先摆在最前面的 6dp 主色小圆点（用户反馈：列表里到处都是紫色小点，去干净点）。
  * 分组感现在只靠**排版**承担：SemiBold 的 labelLarge + 一行更小的条数 + 上下留白。
  * 别再往回加装饰性圆点。
+ *
+ * v2.7：整行可点，折叠 / 展开该分组。右侧那个箭头跟着转，收起时指向右（▸），
+ * 展开时朝下（▾）—— 这是折叠控件的通用语汇，不算「装饰」。
  */
 @Composable
-private fun DayHeader(label: String, count: Int) {
+private fun DayHeader(
+    label: String,
+    count: Int,
+    collapsed: Boolean,
+    onToggle: () -> Unit
+) {
     val cs = MaterialTheme.colorScheme
+
+    // 箭头跟着折叠状态转 90°，用补间而不是直接换图标 —— 换图标是「啪」地跳，动效不连贯
+    val angle by animateFloatAsState(
+        targetValue = if (collapsed) -90f else 0f,
+        animationSpec = tween(durationMillis = 200),
+        label = "dayHeaderArrow"
+    )
+
+    // 和底栏 / 标签栏同一套做法：不用 Surface(onClick)（会叠 ripple 灰块），
+    // 用裸 Row + clickable(indication = null)。
+    val interaction = remember { MutableInteractionSource() }
     Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 4.dp, top = 14.dp, bottom = 9.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.small)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                role = Role.Button,
+                onClick = onToggle
+            )
+            .padding(start = 4.dp, end = 6.dp, top = 14.dp, bottom = 9.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
@@ -828,6 +966,13 @@ private fun DayHeader(label: String, count: Int) {
             "$count 篇",
             style = MaterialTheme.typography.labelSmall,
             color = cs.onSurfaceVariant
+        )
+        Spacer(Modifier.weight(1f))
+        Icon(
+            Icons.Filled.ExpandMore,
+            contentDescription = if (collapsed) "展开「$label」" else "收起「$label」",
+            tint = cs.onSurfaceVariant,
+            modifier = Modifier.size(18.dp).rotate(angle)
         )
     }
 }

@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -85,7 +86,9 @@ fun SearchPane(
     /** 非空 = 作为**浮层**在用，会在搜索框左边画一个返回箭头。 */
     onBack: (() -> Unit)? = null,
     /** 进来就自动聚焦并弹出键盘（只有浮层模式才该开，标签页里一进来就跳键盘很吓人）。 */
-    autoFocus: Boolean = false
+    autoFocus: Boolean = false,
+    /** v2.7：底栏高度。作为「闻件」标签页时由 [WenjianScreen] 传进来（底栏透明，内容要让它）。 */
+    bottomInset: Dp = 0.dp
 ) {
     val vm: SearchViewModel = viewModel(factory = SearchViewModel.provide(app))
     val query by vm.query.collectAsStateWithLifecycle()
@@ -270,7 +273,7 @@ fun SearchPane(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                contentPadding = PaddingValues(bottom = 20.dp)
+                contentPadding = PaddingValues(bottom = bottomInset + 20.dp)
             ) {
                 item(key = "result_count") {
                     Text(

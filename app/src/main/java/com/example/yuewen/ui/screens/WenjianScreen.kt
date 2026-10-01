@@ -13,6 +13,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.yuewen.YuewenApplication
 import com.example.yuewen.ui.components.PillTab
@@ -36,7 +38,14 @@ private val WENJIAN_TABS = listOf("搜索", "收藏", "历史", "笔记")
 fun WenjianScreen(
     app: YuewenApplication,
     onOpenArticle: (String) -> Unit,
-    glass: Boolean = false
+    /**
+     * v2.7：底栏高度（含导航栏 inset）。
+     *
+     * 底栏现在**没有自己的底色**（「保留四个按钮、之外全部透明」），
+     * 所以这里的内容要一路画到屏幕最底边、从底栏后面穿过去；
+     * 但滚到最后一项时得留出这段空白，否则最后一张卡片会被底栏压住看不见。
+     */
+    bottomInset: Dp = 0.dp
 ) {
     val saved by app.settingsRepository.wenjianTabFlow.collectAsStateWithLifecycle(0)
     var tabIndex by remember { mutableIntStateOf(saved.coerceIn(0, WENJIAN_TABS.lastIndex)) }
@@ -62,22 +71,21 @@ fun WenjianScreen(
     Column(modifier = Modifier.fillMaxSize().background(cs.background)) {
         // v2.2：从 Material 的 TabRow（底下一条指示线）换成和底栏同款的胶囊标签栏 ——
         // 一上一下两种完全不同的视觉语言摆在同一屏里太割裂了。
-        // v2.6：① 加 `statusBarsPadding()` —— 沉浸式之后窗口不再自动避让状态栏，
-        //         不补这一层标签会被状态栏压住；
-        //       ② 顺带把外壳换成玻璃，和底栏、首页顶栏统一。
+        // v2.6：加 `statusBarsPadding()` —— 沉浸式之后窗口不再自动避让状态栏，
+        //       不补这一层标签会被状态栏压住。
+        // v2.7：撤掉「液态玻璃」，退回实色胶囊（和 PillTabRow 内部一起改的）。
         PillTabRow(
             items = tabs,
             selectedIndex = tabIndex,
             onSelect = { select(it) },
-            glass = glass,
             modifier = Modifier.statusBarsPadding()
         )
 
         when (tabIndex) {
-            0 -> SearchPane(app = app, onOpenArticle = onOpenArticle)
-            1 -> BookmarksPane(app = app, onOpenArticle = onOpenArticle)
-            2 -> HistoryPane(app = app, onOpenArticle = onOpenArticle)
-            else -> NotesPane(app = app, onOpenArticle = onOpenArticle)
+            0 -> SearchPane(app = app, onOpenArticle = onOpenArticle, bottomInset = bottomInset)
+            1 -> BookmarksPane(app = app, onOpenArticle = onOpenArticle, bottomInset = bottomInset)
+            2 -> HistoryPane(app = app, onOpenArticle = onOpenArticle, bottomInset = bottomInset)
+            else -> NotesPane(app = app, onOpenArticle = onOpenArticle, bottomInset = bottomInset)
         }
     }
 }

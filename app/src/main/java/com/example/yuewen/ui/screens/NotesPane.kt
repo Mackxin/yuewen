@@ -48,6 +48,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -65,7 +66,7 @@ import com.example.yuewen.ui.viewmodel.NotesViewModel
  * 所以就算那篇文章后来被清缓存删掉了，笔记本身依然是完整、可追溯的。
  */
 @Composable
-fun NotesPane(app: YuewenApplication, onOpenArticle: (String) -> Unit) {
+fun NotesPane(app: YuewenApplication, onOpenArticle: (String) -> Unit, bottomInset: Dp = 0.dp) {
     val vm: NotesViewModel = viewModel(factory = NotesViewModel.provide(app))
     val all by vm.notes.collectAsStateWithLifecycle()
     val query by vm.query.collectAsStateWithLifecycle()
@@ -120,7 +121,7 @@ fun NotesPane(app: YuewenApplication, onOpenArticle: (String) -> Unit) {
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                contentPadding = PaddingValues(top = 2.dp, bottom = 20.dp)
+                contentPadding = PaddingValues(top = 2.dp, bottom = bottomInset + 20.dp)
             ) {
                 item(key = "count") {
                     Text(

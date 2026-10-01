@@ -1,6 +1,5 @@
 package com.example.yuewen.ui.components
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -243,7 +242,10 @@ private fun StandardCard(
         ),
         shape = shape,
         color = cs.surface,
-        border = BorderStroke(1.dp, cs.outlineVariant),
+        // v2.7：去掉 1dp 描边（用户要求「首页每篇内容的卡片也不要边框」）。
+        // 卡片靠**白底 + 1dp 投影**和页面底色（background）区分 ——
+        // 少了描边之后 1dp 的投影还够用；如果哪天觉得糊在一起，先调 shadowElevation，
+        // 别再往回加描边。
         shadowElevation = 1.dp
     ) {
         // v2.0.3 卡片里三处位置固定下来：
@@ -319,7 +321,7 @@ private fun MagazineCard(
         ),
         shape = shape,
         color = cs.surface,
-        border = BorderStroke(1.dp, cs.outlineVariant),
+        // v2.7：去掉 1dp 描边（同上，用户要求「首页每篇内容的卡片也不要边框」）
         shadowElevation = 2.dp
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -398,7 +400,12 @@ private fun MetaLine(article: Article, color: Color, modifier: Modifier = Modifi
             meta,
             style = MaterialTheme.typography.labelSmall,
             color = color,
-            maxLines = 1,
+            // v2.7：用户要求副标题显示完整、不要三个点。
+            // 卡片里这行是「来源 · 相对时间」，源名长（如「华尔街见闻」）时一行确实放不下，
+            // 折到第二行即可 —— 卡片文字的 Column 本来就是 SpaceBetween，
+            // 长高一点不会把别的元素挤歪。
+            // 保留 Ellipsis 只是给极端长文案兜底，正常用不到。
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
         if (article.folder != "默认") {

@@ -163,16 +163,9 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
     private val KEY_HOME_SHOW_CAT_ROW = booleanPreferencesKey("home_show_cat_row")
     private val KEY_HOME_SHOW_SRC_ROW = booleanPreferencesKey("home_show_src_row")
 
-    /**
-     * v2.6：液态玻璃（Liquid Glass）设计语言开关。
-     *
-     * 打开之后底栏、首页顶栏、闻件标签栏都换成半透明 + 高光描边的玻璃质感；
-     * 关掉就退回 v2.5 的不透明样式，一个像素都不差。
-     *
-     * ⚠️ 默认 **true**：这是本轮的主打视觉，装完就能看到；
-     * 不合适的话在「设置 → 外观 → 液态玻璃」一键关掉。
-     */
-    private val KEY_GLASS_UI = booleanPreferencesKey("glass_ui")
+    // v2.7：「液态玻璃」整套设计语言已按用户要求撤掉 —— KEY_GLASS_UI 一并删除。
+    // 老用户机器上残留的 `glass_ui` 键不会被读、也不会进备份（BACKUP_KEYS 白名单里没有它），
+    // 下次 DataStore 写入时自然被清掉，不需要写迁移。
 
     /** 打开 App 时默认停在哪个分类（`推荐` = 不限分类）。 */
     private val KEY_HOME_DEFAULT_CATEGORY = stringPreferencesKey("home_default_category")
@@ -326,9 +319,6 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         HomeRows.showSourceRow(prefs[KEY_HOME_SHOW_SRC_ROW], prefs[KEY_HOME_CHIP_MODE])
     }
 
-    /** v2.6：要不要启用液态玻璃质感（底栏 / 首页顶栏 / 闻件标签栏）。默认开。 */
-    val glassUiFlow: Flow<Boolean> = dataStore.data.map { it[KEY_GLASS_UI] ?: true }
-
     val homeDefaultCategoryFlow: Flow<String> = dataStore.data.map { it[KEY_HOME_DEFAULT_CATEGORY] ?: "推荐" }
     val homeDefaultSourceFlow: Flow<String> = dataStore.data.map { it[KEY_HOME_DEFAULT_SOURCE] ?: "" }
 
@@ -419,8 +409,6 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
     // v2.5：两个独立开关（旧的三档键只读不写，只作老数据回落用）
     suspend fun setHomeShowCategoryRow(v: Boolean) = dataStore.edit { it[KEY_HOME_SHOW_CAT_ROW] = v }
 
-    /** v2.6：切换液态玻璃。 */
-    suspend fun setGlassUi(v: Boolean) = dataStore.edit { it[KEY_GLASS_UI] = v }
     suspend fun setHomeShowSourceRow(v: Boolean) = dataStore.edit { it[KEY_HOME_SHOW_SRC_ROW] = v }
 
     suspend fun setHomeDefaultCategory(v: String) = dataStore.edit { it[KEY_HOME_DEFAULT_CATEGORY] = v }
@@ -645,8 +633,6 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
                     KEY_THEME_PALETTE.name -> prefs[KEY_THEME_PALETTE] = value
                     KEY_CUSTOM_HUE.name -> value.toIntOrNull()?.let { prefs[KEY_CUSTOM_HUE] = it.coerceIn(0, 360) }
                     KEY_CUSTOM_SAT.name -> value.toIntOrNull()?.let { prefs[KEY_CUSTOM_SAT] = it.coerceIn(0, 100) }
-                    // v2.6：液态玻璃跟着备份走（外观习惯）
-                    KEY_GLASS_UI.name -> prefs[KEY_GLASS_UI] = asBool(value)
                     // v2.4：首页关键词。恢复时先过一遍清洗，手改过的备份也进不来脏数据。
                     KEY_HOME_KEYWORDS.name -> prefs[KEY_HOME_KEYWORDS] =
                         sanitizeKeywords(decodeList(value)).joinToString(":::")
@@ -746,9 +732,7 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         // 换设备丢掉的话用户会立刻发现外观变了。
         KEY_THEME_PALETTE, KEY_CUSTOM_HUE, KEY_CUSTOM_SAT,
         // v2.4：首页关键词。用户一个个敲进去的词，换手机不该重敲一遍。
-        KEY_HOME_KEYWORDS, KEY_HOME_SHOW_KEYWORDS,
-        // v2.6：液态玻璃开关。属于外观偏好，跟配色一样该跟着备份走。
-        KEY_GLASS_UI
+        KEY_HOME_KEYWORDS, KEY_HOME_SHOW_KEYWORDS
     )
 
     private companion object {
