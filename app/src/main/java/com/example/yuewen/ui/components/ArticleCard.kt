@@ -141,19 +141,25 @@ private fun ArticleCardBody(
 /**
  * 搜索命中高亮：把标题里匹配到的关键词染成主色 + 加粗。
  * 用户一眼就能看出「为什么这条会被搜出来」。
+ *
+ * ⚠️ v2.5：结果 `remember` 住。`buildAnnotatedString` 会做一次字符串分配 + span 构造，
+ * 而卡片会因为列表里任意一点状态变化而重组 —— 一屏十几张卡片、滚动时反复触发，
+ * 是实打实的每秒几百次无谓分配。（`cs.primary` 也是输入之一：换配色方案要重新染。）
  */
 @Composable
 private fun highlightedTitle(text: String, query: String?): AnnotatedString {
-    if (query.isNullOrBlank()) return AnnotatedString(text)
-    val idx = text.indexOf(query, ignoreCase = true)
-    if (idx < 0) return AnnotatedString(text)
     val cs = MaterialTheme.colorScheme
-    return buildAnnotatedString {
-        append(text.substring(0, idx))
-        withStyle(SpanStyle(color = cs.primary, fontWeight = FontWeight.Bold)) {
-            append(text.substring(idx, idx + query.length))
+    return remember(text, query, cs.primary) {
+        if (query.isNullOrBlank()) return@remember AnnotatedString(text)
+        val idx = text.indexOf(query, ignoreCase = true)
+        if (idx < 0) return@remember AnnotatedString(text)
+        buildAnnotatedString {
+            append(text.substring(0, idx))
+            withStyle(SpanStyle(color = cs.primary, fontWeight = FontWeight.Bold)) {
+                append(text.substring(idx, idx + query.length))
+            }
+            append(text.substring(idx + query.length))
         }
-        append(text.substring(idx + query.length))
     }
 }
 
@@ -394,9 +400,14 @@ private fun UnreadDot(visible: Boolean) {
 @Composable
 private fun MetaLine(article: Article, color: Color, modifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
+    // v2.5：相对时间要取当前时间再拼串，别每次重组都算一遍。
+    // 这里按 (来源, 发布时间) 缓存 —— 刷新出「新的发布时间」会自然失效。
+    val meta = remember(article.sourceName, article.pubDate) {
+        "${article.sourceName} · ${formatRelativeTime(article.pubDate)}"
+    }
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         Text(
-            "${article.sourceName} · ${formatRelativeTime(article.pubDate)}",
+            meta,
             style = MaterialTheme.typography.labelSmall,
             color = color,
             maxLines = 1,

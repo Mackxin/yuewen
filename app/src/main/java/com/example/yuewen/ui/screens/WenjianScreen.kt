@@ -50,11 +50,15 @@ fun WenjianScreen(app: YuewenApplication, onOpenArticle: (String) -> Unit) {
         scope.launch { app.settingsRepository.setWenjianTab(i) }
     }
 
+    // 标签条目只跟常量表有关，别每次重组都新建一遍 List<PillTab>
+    // （列表对象换了，PillTabRow 内部所有依赖它的东西都会跟着失效）
+    val tabs = remember { WENJIAN_TABS.map { PillTab(it) } }
+
     Column(modifier = Modifier.fillMaxSize().background(cs.background)) {
         // v2.2：从 Material 的 TabRow（底下一条指示线）换成和底栏同款的胶囊标签栏 ——
         // 一上一下两种完全不同的视觉语言摆在同一屏里太割裂了。
         PillTabRow(
-            items = WENJIAN_TABS.map { PillTab(it) },
+            items = tabs,
             selectedIndex = tabIndex,
             onSelect = { select(it) }
         )

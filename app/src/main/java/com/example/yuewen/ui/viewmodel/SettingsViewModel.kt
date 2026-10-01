@@ -76,8 +76,19 @@ class SettingsViewModel(
     val readerSpacing: StateFlow<String> = settings.readerSpacingFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "normal")
     val readerSize: StateFlow<Int> = settings.readerSizeFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1)
 
+    /**
+     * 当前订阅源列表。
+     *
+     * ⚠️ v2.5：从 `WhileSubscribed` 改成 `Eagerly`。
+     * 原因：[isDuplicateUrl] 是**同步**读它的（加源页要在组合阶段判断「这个源加过没有」），
+     * 而 `WhileSubscribed` 在没人订阅时 `.value` 会停在初始的**空列表** ——
+     * 那时 `isDuplicateUrl` 会恒为 false，已经加过的源被当成新源重复添加。
+     * 以前之所以没暴露，纯粹是因为 `AddSourceScreen` 恰好也订阅了这个流，
+     * 「正确性靠调用方凑巧订阅维持」是脆的，不能留。
+     * （同一个坑 v2.0.2 在 `HomeViewModel.sources` 上踩过一次。）
+     */
     val sources: StateFlow<List<FeedSource>> = settings.sourcesFlow
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val blockedSources: StateFlow<List<String>> = settings.blockedSourcesFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val blockedKeywords: StateFlow<List<String>> = settings.blockedKeywordsFlow
@@ -122,12 +133,20 @@ class SettingsViewModel(
     val guideSeen: StateFlow<Boolean> = settings.guideSeenFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-    // ==================== v2.0.2：首页筛选（分类 / 阅源） ====================
+    // ==================== v2.0.2 / v2.5：首页筛选 ====================
+    //
+    // v2.5：原来那把三档开关（分类 / 阅源 / 都显示）拆成了两个独立开关。
+    // 三档本身就是在描述「两行各自要不要显示」，拆开之后四种组合都能表达，
+    // 而且和旁边的「显示副标题」「显示关键词行」是同一套心智模型。
+    // 老数据的兼容在 [com.example.yuewen.data.util.HomeRows] 里，有离线测试钉着。
 
-    /** 首页顶栏胶囊显示哪种维度。 */
-    val homeChipMode: StateFlow<HomeChipMode> = settings.homeChipModeFlow
-        .map { HomeChipMode.of(it) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), HomeChipMode.Category)
+    /** 首页显不显示「分类」那一行。 */
+    val homeShowCategoryRow: StateFlow<Boolean> = settings.homeShowCategoryRowFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    /** 首页显不显示「阅源名称」那一行。 */
+    val homeShowSourceRow: StateFlow<Boolean> = settings.homeShowSourceRowFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
     /** 打开 App 时默认停在的分类（「推荐」= 全部）。 */
     val homeDefaultCategory: StateFlow<String> = settings.homeDefaultCategoryFlow
@@ -137,7 +156,8 @@ class SettingsViewModel(
     val homeDefaultSource: StateFlow<String> = settings.homeDefaultSourceFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
-    fun setHomeChipMode(v: HomeChipMode) = viewModelScope.launch { settings.setHomeChipMode(v.key) }
+    fun setHomeShowCategoryRow(v: Boolean) = viewModelScope.launch { settings.setHomeShowCategoryRow(v) }
+    fun setHomeShowSourceRow(v: Boolean) = viewModelScope.launch { settings.setHomeShowSourceRow(v) }
     fun setHomeDefaultCategory(v: String) = viewModelScope.launch { settings.setHomeDefaultCategory(v) }
     fun setHomeDefaultSource(v: String) = viewModelScope.launch { settings.setHomeDefaultSource(v) }
 

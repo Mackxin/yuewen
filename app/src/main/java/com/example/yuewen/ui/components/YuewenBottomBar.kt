@@ -1,6 +1,5 @@
 package com.example.yuewen.ui.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -27,7 +26,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
@@ -59,11 +57,21 @@ fun YuewenBottomBar(
     val cs = MaterialTheme.colorScheme
     val n = items.size.coerceAtLeast(1)
 
-    // 连续进度：currentPage 是整数页，currentPageOffsetFraction 是页间偏移（-0.5~0.5）。
-    // 两者相加就是「底栏应该停在哪儿」，拖到一半时它就是 1.5 这种小数。
-    // coerceIn 兜住两端过度滚动的越界值，让胶囊不会滑出底栏。
-    val pageOffset = (pagerState.currentPage + pagerState.currentPageOffsetFraction)
-        .coerceIn(0f, (n - 1).toFloat())
+    /**
+     * 连续进度：`currentPage` 是整数页，`currentPageOffsetFraction` 是页间偏移（-0.5~0.5）。
+     * 两者相加就是「底栏应该停在哪儿」，拖到一半时它就是 1.5 这种小数。
+     * `coerceIn` 兜住两端过度滚动的越界值，让胶囊不会滑出底栏。
+     *
+     * ⚠️ v2.5：这里**故意做成一个函数**，不在组合阶段直接把值读出来。
+     * 那是个每帧都变的高频状态 —— 组合期读一次，整条底栏（含 Surface 的阴影重录）
+     * 就会每帧重组，[drawBehind] 本来想省的活全白费。现在「谁需要谁自己读」：
+     * 胶囊在绘制 lambda 里读，图标着色在各自的 [BarItem] 里读，
+     * 于是每帧只有那 4 个小格子的内容重组，外层的 Surface / Row 可以跳过。
+     */
+    val pageOffsetOf: () -> Float = {
+        (pagerState.currentPage + pagerState.currentPageOffsetFraction)
+            .coerceIn(0f, (n - 1).toFloat())
+    }
 
     // 计算一次即可，drawBehind 每帧会用
     val pillColor = cs.primary
@@ -95,6 +103,8 @@ fun YuewenBottomBar(
                 // 胶囊直接用 drawBehind 画：能拿到 Row 的实测宽度，
                 // 私有每个槽位宽度 = 总宽 / 项数，不需要额外的测量布局。
                 .drawBehind {
+                    // 绘制阶段读：拖动时只重绘这一层，不重组
+                    val pageOffset = pageOffsetOf()
                     val slot = size.width / n
                     // 高亮块 = 整个槽位宽，两端与胶囊边缘严丝合缝
                     drawRoundRect(
@@ -107,11 +117,12 @@ fun YuewenBottomBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             items.forEachIndexed { index, item ->
-                // 1 = 胶囊正落在这一项上，0 = 离得最远（相邻项之间的中间位置）
-                val fraction = (1f - abs(pageOffset - index)).coerceIn(0f, 1f)
                 BarItem(
                     item = item,
-                    fraction = fraction,
+                    // 传函数不传值：让读取发生在 BarItem 自己的组合作用域里，
+                    // 这样每帧只失效那一个小格子，外层 Row / Surface 照常跳过
+                    pageOffsetOf = pageOffsetOf,
+                    index = index,
                     badge = if (item == Screen.Home) unreadCount else 0,
                     onClick = { onSelect(item) },
                     modifier = Modifier.weight(1f)
@@ -133,12 +144,17 @@ fun YuewenBottomBar(
 @Composable
 private fun BarItem(
     item: Screen,
-    fraction: Float,
+    pageOffsetOf: () -> Float,
+    index: Int,
     badge: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val cs = MaterialTheme.colorScheme
+    // ⚠️ 读取放在**这里**（而不是调用方算好传进来）是有意的：
+    // 这样每帧失效的只有这一个格子，外层不会被一起拖下去重组。
+    // 1 = 胶囊正落在这一项上，0 = 离得最远（相邻项之间的中间位置）
+    val fraction = (1f - abs(pageOffsetOf() - index)).coerceIn(0f, 1f)
     val tint = lerp(cs.onSurfaceVariant, cs.onPrimary, fraction)
     val badgeColor = lerp(cs.error, cs.onPrimary, fraction)
     val badgeContent = lerp(cs.onError, cs.primary, fraction)

@@ -24,6 +24,7 @@ import com.example.yuewen.data.util.Json
 import com.example.yuewen.data.util.DEFAULT_HOME_KEYWORDS
 import com.example.yuewen.data.util.HOME_KEYWORD_LIMIT
 import com.example.yuewen.data.util.HOME_KEYWORD_MAX_LEN
+import com.example.yuewen.data.util.HomeRows
 import com.example.yuewen.data.util.LIKE_ESCAPE_CHAR
 import com.example.yuewen.data.util.asArray
 import com.example.yuewen.data.util.asBooleanOr
@@ -1019,6 +1020,53 @@ fun main() {
     check("24.16 哪个字段都不含 → 不命中", !matchesKeyword(kwTitle, kwSummary, kwBody, "财经"))
     check("24.17 关键词自带空格也能命中（先 trim 再比）",
         matchesKeyword(kwTitle, kwSummary, kwBody, " 手机 "))
+
+    // ========================================================
+    // 25. 首页两行的显隐规则（v2.5）
+    //
+    // v2.5 把「首页筛选」那把三档开关（category / source / both）拆成了两个独立开关。
+    // 拆的时候**没有做迁移写盘**，而是「新键没写过就按旧键现算」——
+    // 好处是升级瞬间外观不变、老备份文件也能恢复对；
+    // 代价是这段映射必须长期稳定。所以每条组合都在这里钉死。
+    // ========================================================
+    println()
+    println("== 25. 首页筛选行显隐（v2.5） ==")
+
+    // ---- 老用户：只有旧键（新键 = null）----
+    // 这三条是「升级后外观一个像素不变」的保证
+    check("25.01 旧档 category → 只显示分类行（旧默认值；升级后不能凭空多出一行）",
+        HomeRows.showCategoryRow(null, HomeRows.CHIP_MODE_CATEGORY) &&
+            !HomeRows.showSourceRow(null, HomeRows.CHIP_MODE_CATEGORY))
+    check("25.02 旧档 source → 只显示阅源行",
+        !HomeRows.showCategoryRow(null, HomeRows.CHIP_MODE_SOURCE) &&
+            HomeRows.showSourceRow(null, HomeRows.CHIP_MODE_SOURCE))
+    check("25.03 旧档 both → 两行都显示",
+        HomeRows.showCategoryRow(null, HomeRows.CHIP_MODE_BOTH) &&
+            HomeRows.showSourceRow(null, HomeRows.CHIP_MODE_BOTH))
+
+    // ---- 全新安装：两个键都没写过 ----
+    check("25.04 两个键都没有 → 等价于旧默认值（只显示分类行）",
+        HomeRows.showCategoryRow(null, null) && !HomeRows.showSourceRow(null, null))
+
+    // ---- 新键优先级更高 ----
+    check("25.05 新键写了就盖过旧档（分类行）", !HomeRows.showCategoryRow(false, HomeRows.CHIP_MODE_BOTH))
+    check("25.06 新键写了就盖过旧档（阅源行）", HomeRows.showSourceRow(true, HomeRows.CHIP_MODE_CATEGORY))
+    check("25.07 两行都关掉是合法状态，不该被任何兜底掰回来",
+        !HomeRows.showCategoryRow(false, HomeRows.CHIP_MODE_BOTH) &&
+            !HomeRows.showSourceRow(false, HomeRows.CHIP_MODE_BOTH))
+    check("25.08 新键 true 能把旧档的 source 掰回「分类行也显示」",
+        HomeRows.showCategoryRow(true, HomeRows.CHIP_MODE_SOURCE))
+
+    // ---- 脏数据兜底 ----
+    // 关键：大小写不同 / 拼错的值如果原样拿去 != 比较，两个判断会**同时成立** → 两行一起冒出来
+    check("25.09 旧键认不出来（大小写不对）→ 回落默认，不会两行一起冒出来",
+        HomeRows.showCategoryRow(null, "Category") && !HomeRows.showSourceRow(null, "Category"))
+    check("25.10 旧键是乱码同样回落默认",
+        HomeRows.showCategoryRow(null, "??") && !HomeRows.showSourceRow(null, "??"))
+    check("25.11 旧键是空串同样回落默认（当成没设过）",
+        HomeRows.showCategoryRow(null, "") && !HomeRows.showSourceRow(null, ""))
+    check("25.12 默认档常量就是 category（和加这个功能之前的默认一致）",
+        HomeRows.DEFAULT_CHIP_MODE == HomeRows.CHIP_MODE_CATEGORY)
 
     println()
     println("==========================================")

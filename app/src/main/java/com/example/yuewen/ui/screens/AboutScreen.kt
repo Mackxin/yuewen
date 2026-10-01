@@ -217,7 +217,7 @@ fun AboutScreen(app: YuewenApplication, onBack: () -> Unit) {
                     "备份与恢复：订阅源 + 收藏 + 摘录笔记 + 个性化设置打包成 JSON，换手机一键搬（刻意不含正文缓存，所以文件很小）",
                     "自定义名字：应用内名称随便填（首页标题、关于页同步改）；桌面图标名可从 8 个预设里挑",
                     "首页可配置：右上角「布局」「刷新」按钮与副标题都能在设置里单独关掉，顶栏要多干净有多干净",
-                    "首页筛选可选：顶栏胶囊能按「分类」筛、按「阅源」筛，或者两行都显示（两级叠加）；打开 App 时默认停在哪儿也能设",
+                    "首页筛选开关：「分类」行和「阅源」行可以各自单独开关（都开时是两级叠加，上分类、下阅源），关掉的那一级会连筛选条件一起清掉；打开 App 时默认停在哪儿也能设",
                     "首页排序可选：最新在前 / 最早在前 / 随机 / 按阅源 / 按标题五档；随机档位顺序固定，点「换一批」才重洗，下拉刷新不会打乱列表",
                     "首页搜索入口：顶栏最左边的放大镜点开就是全屏搜索，搜完自动收起键盘；不用先切到「闻件」再找「搜索」那一栏",
                     "首页关键词：设置里填几个自己关心的词（手机 / 汽车 / AI…），首页顶部多出一排胶囊，点一下就只看标题 / 摘要 / 正文含这个词的文章，与分类、阅源三级叠加",
@@ -277,7 +277,7 @@ fun AboutScreen(app: YuewenApplication, onBack: () -> Unit) {
                 TechRow("备份格式", "JSON（订阅源 + 收藏 + 笔记 + 设置；不含正文缓存，KB 级）")
                 TechRow("桌面图标名", "activity-alias 切换（系统不允许运行时改 android:label）")
                 TechRow("列表布局", "紧凑 / 卡片 / 杂志三档（偏好持久化）")
-                TechRow("首页筛选", "分类 × 阅源两级筛选（一条 SQL 覆盖四种组合，顶栏按设置显示一行或两行）")
+                TechRow("首页筛选", "分类 × 阅源两级筛选（一条 SQL 覆盖四种组合；两行各有独立开关，老的三档设置读取时自动换算）")
                 TechRow("订阅源去重", "id 由地址派生（稳定唯一）+ 读设置时就地修复历史重复数据")
                 TechRow("RSSHub 支持", "实例 + 路由 → 订阅地址；路径按 UTF-8 百分号编码并保留斜杠（支持「作者/仓库名」这类两段式参数）")
                 TechRow("阅读排版", "字号 / 行距 / 字体 / 底色四项可调")
@@ -293,7 +293,8 @@ fun AboutScreen(app: YuewenApplication, onBack: () -> Unit) {
                 TechRow("网络策略", "预加载可限定仅 Wi-Fi（ConnectivityManager 判断）")
                 TechRow("阅读统计", "基于本地 readAt 时间戳分桶（java.time 按本地时区）")
                 TechRow("缓存分类", "Coil 磁盘/内存缓存 + Room 文章 + 正文全文三类独立")
-                TechRow("过渡动画", "底栏胶囊由 Pager 滑动进度连续驱动")
+                TechRow("过渡动画", "底栏胶囊由 Pager 滑动进度连续驱动（进度只在绘制阶段读，拖动时不重组底栏）")
+                TechRow("切页策略", "点底栏跨页时瞬切：滑动动画会途经并现场组合中间页（各自建 VM + 订阅数据库），既卡又会「路过」别的页面")
                 TechRow("回顶手势", "首页双击标题 / 文章双击顶栏空白（LazyListState / ScrollState 动画滚动）")
                 TechRow("抓取策略", "多源并行抓取 + upsert 合并写库（保留阅读状态）")
                 TechRow("列表性能", "查询分页限额（400/300/200）+ 后台线程过滤")
@@ -306,7 +307,8 @@ fun AboutScreen(app: YuewenApplication, onBack: () -> Unit) {
             }
 
             // 官网 / 开源地址（v2.0.2）
-            // 地址先留空，填在 ui/util/AppLinks.kt 里即可 —— 填上之后这两行自动变可点。
+            // 地址集中在 ui/util/AppLinks.kt：填上哪一行，哪一行就自动从「暂未上线」变成可点链接。
+            // v2.5 起 GitHub 仓库地址已填好（https://github.com/Mackxin/yuewen）。
             InfoCard(modifier = Modifier.padding(top = 14.dp)) {
                 SectionTitle("官网与开源")
                 LinkRow("官网", AppLinks.OFFICIAL_SITE, AppLinks.PLACEHOLDER)

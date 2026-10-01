@@ -9,7 +9,6 @@ import androidx.work.WorkerParameters
 import com.example.yuewen.R
 import com.example.yuewen.YuewenApplication
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
 import androidx.core.app.NotificationCompat
 
 class RefreshWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
@@ -17,7 +16,10 @@ class RefreshWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
     override suspend fun doWork(): Result {
         val app = applicationContext as YuewenApplication
         val newCount = app.newsRepository.refreshAll()
-        val notify = runBlocking { app.settingsRepository.notifyFlow.first() }
+        // v2.5：`doWork()` 本身就是 suspend 的，直接 `first()` 即可。
+        // 以前套了一层 `runBlocking` —— 那会把 WorkManager 的工作线程整个占住，
+        // 属于典型的「在挂起函数里做阻塞调用」反模式。
+        val notify = app.settingsRepository.notifyFlow.first()
         if (newCount > 0 && notify) showNotification(newCount)
         // v1.9：定时刷新完也顺手把正文缓存一轮。
         // 这里必须 await 完成（runAutoHere 直接跑在当前协程里）——

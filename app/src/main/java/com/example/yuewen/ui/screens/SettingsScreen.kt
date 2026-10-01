@@ -88,7 +88,6 @@ import com.example.yuewen.ui.util.TtsRateLabels
 import com.example.yuewen.ui.util.iconNameOf
 import com.example.yuewen.ui.util.rememberImeDismiss
 import com.example.yuewen.ui.util.titleOrDefault
-import com.example.yuewen.ui.viewmodel.HomeChipMode
 import com.example.yuewen.ui.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -583,8 +582,9 @@ fun SettingsScreen(
     val homeShowSubtitle by vm.homeShowSubtitle.collectAsStateWithLifecycle()
     val ttsNotify by vm.ttsNotify.collectAsStateWithLifecycle()
     val guideSeen by vm.guideSeen.collectAsStateWithLifecycle()
-    // v2.0.2：首页筛选用哪种维度 + 打开时默认停在哪儿
-    val chipMode by vm.homeChipMode.collectAsStateWithLifecycle()
+    // v2.0.2 / v2.5：首页那两行筛选项各自的开关 + 打开时默认停在哪儿
+    val showCategoryRow by vm.homeShowCategoryRow.collectAsStateWithLifecycle()
+    val showSourceRow by vm.homeShowSourceRow.collectAsStateWithLifecycle()
     val homeDefaultCategory by vm.homeDefaultCategory.collectAsStateWithLifecycle()
     val homeDefaultSource by vm.homeDefaultSource.collectAsStateWithLifecycle()
     // v2.2：首页排序 + 默认浏览器
@@ -643,14 +643,14 @@ fun SettingsScreen(
         else -> "$refresh 分钟"
     }
 
-    // ---- v2.0.2：首页筛选相关的派生值 ----
+    // ---- v2.0.2 / v2.5：首页筛选相关的派生值 ----
     // 分类直接从已订阅的源里抽（不再单独存一份，源删了分类自然消失）
     val categories = sources.map { it.category }.distinct().filter { it.isNotBlank() }
     val defaultFilterLabel = when {
         // 选了具体阅源就显示它（阅源是更「具体」的那一级）
-        chipMode != HomeChipMode.Category && homeDefaultSource.isNotBlank() -> homeDefaultSource
-        homeDefaultCategory != "推荐" -> homeDefaultCategory
-        chipMode == HomeChipMode.Source -> "全部阅源"
+        showSourceRow && homeDefaultSource.isNotBlank() -> homeDefaultSource
+        showCategoryRow && homeDefaultCategory != "推荐" -> homeDefaultCategory
+        showSourceRow -> "全部阅源"
         else -> "全部"
     }
 
@@ -897,18 +897,24 @@ fun SettingsScreen(
                 )
                 Caption("默认显示。那两个小图标分别是「仅看未读 / 显示全部」和「全部标为已读」。")
 
-                // ---- v2.0.2：首页筛选胶囊按什么维度（分类 / 阅源 / 两行都显示） ----
+                // ---- v2.0.2 / v2.5：首页那两行筛选胶囊各自的开关 ----
+                // v2.5：原来是一把三档开关（分类 / 阅源 / 都显示），但它描述的其实就是
+                // 「两行各自要不要显示」，读起来绕。拆成两个独立开关，和上面「显示副标题」
+                // 是同一套心智模型，四种组合也都能表达。
                 Div()
                 SubTitle("首页筛选")
-                ChoiceRow(
-                    label = "显示",
-                    options = HomeChipMode.entries.map { it.label },
-                    selectedIndex = chipMode.ordinal,
-                    onSelect = { vm.setHomeChipMode(HomeChipMode.entries[it]) }
+                SettingsRow(
+                    "显示「分类」行",
+                    trailing = { Switch(checked = showCategoryRow, onCheckedChange = { vm.setHomeShowCategoryRow(it) }) }
+                )
+                Div()
+                SettingsRow(
+                    "显示「阅源」行",
+                    trailing = { Switch(checked = showSourceRow, onCheckedChange = { vm.setHomeShowSourceRow(it) }) }
                 )
                 Caption(
-                    "顶栏那排胶囊可以按「分类」筛，也可以按「阅源」筛；选「都显示」就是上下两行，" +
-                        "上面选分类、下面选这个分类里的阅源，两个条件是叠加的。"
+                    "首页标题下面那排胶囊：「分类」行选大类，「阅源」行选具体来源，" +
+                        "两个条件是叠加的。哪一行用不上就关掉，关掉后那一级的筛选会一起清空，不会留下看不见的条件。"
                 )
 
                 // ---- v2.4：首页关键词胶囊 ----
@@ -995,18 +1001,21 @@ fun SettingsScreen(
                     expanded = defaultExpanded,
                     onExpandedChange = { defaultExpanded = it },
                     options = buildList {
-                        if (chipMode != HomeChipMode.Source) {
+                        if (showCategoryRow) {
                             add("c:推荐" to "全部（不限分类）")
                             categories.forEach { add("c:$it" to it) }
                         }
-                        if (chipMode != HomeChipMode.Category) {
+                        if (showSourceRow) {
                             add("s:" to "全部阅源")
                             sources.filter { it.enabled }.map { it.name }.distinct().forEach { add("s:$it" to it) }
                         }
                     },
-                    selectedKey = if (chipMode != HomeChipMode.Source && homeDefaultSource.isBlank())
-                        "c:$homeDefaultCategory"
-                    else "s:$homeDefaultSource",
+                    // 显示哪一级就以哪一级为准：阅源更「具体」，所以优先显示它
+                    selectedKey = when {
+                        showSourceRow && homeDefaultSource.isNotBlank() -> "s:$homeDefaultSource"
+                        showCategoryRow -> "c:$homeDefaultCategory"
+                        else -> "s:$homeDefaultSource"
+                    },
                     onPick = { key ->
                         if (key.startsWith("c:")) vm.setHomeDefaultCategory(key.removePrefix("c:"))
                         else vm.setHomeDefaultSource(key.removePrefix("s:"))

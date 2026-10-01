@@ -11,6 +11,7 @@ import com.example.yuewen.data.model.FeedCatalog
 import com.example.yuewen.data.model.FeedSource
 import com.example.yuewen.data.model.sanitizeSources
 import com.example.yuewen.data.util.DEFAULT_HOME_KEYWORDS
+import com.example.yuewen.data.util.HomeRows
 import com.example.yuewen.data.util.sanitizeKeywords
 import com.example.yuewen.ui.theme.DEFAULT_CUSTOM_HUE
 import com.example.yuewen.ui.theme.DEFAULT_CUSTOM_SAT
@@ -152,6 +153,16 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
      */
     private val KEY_HOME_CHIP_MODE = stringPreferencesKey("home_chip_mode")
 
+    /**
+     * v2.5：上面那把三档开关拆成了两个独立开关 —— 分类行、阅源行各自开/关。
+     *
+     * ⚠️ **读的时候「新键不存在就回落到旧键现算」**（见 [homeShowCategoryRowFlow]），
+     * 刻意不做一次性迁移写盘：老用户升级上来外观一个像素不变，
+     * 备份里只有旧键的老文件也照样能恢复对。映射规则在 [HomeRows] 里，有离线测试钉着。
+     */
+    private val KEY_HOME_SHOW_CAT_ROW = booleanPreferencesKey("home_show_cat_row")
+    private val KEY_HOME_SHOW_SRC_ROW = booleanPreferencesKey("home_show_src_row")
+
     /** 打开 App 时默认停在哪个分类（`推荐` = 不限分类）。 */
     private val KEY_HOME_DEFAULT_CATEGORY = stringPreferencesKey("home_default_category")
 
@@ -288,8 +299,22 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
     val ttsNotifyFlow: Flow<Boolean> = dataStore.data.map { it[KEY_TTS_NOTIFY] ?: true }
     val guideSeenFlow: Flow<Boolean> = dataStore.data.map { it[KEY_GUIDE_SEEN] ?: false }
 
-    // ---- v2.0.2：首页筛选 ----
-    val homeChipModeFlow: Flow<String> = dataStore.data.map { it[KEY_HOME_CHIP_MODE] ?: "category" }
+    // ---- v2.0.2 / v2.5：首页筛选（分类行、阅源行各自独立开关） ----
+
+    /**
+     * 首页要不要显示「分类」那一行。
+     *
+     * 新键没写过时回落旧的三档键 —— 见 [KEY_HOME_CHIP_MODE] 的注释。
+     */
+    val homeShowCategoryRowFlow: Flow<Boolean> = dataStore.data.map { prefs ->
+        HomeRows.showCategoryRow(prefs[KEY_HOME_SHOW_CAT_ROW], prefs[KEY_HOME_CHIP_MODE])
+    }
+
+    /** 首页要不要显示「阅源名称」那一行。 */
+    val homeShowSourceRowFlow: Flow<Boolean> = dataStore.data.map { prefs ->
+        HomeRows.showSourceRow(prefs[KEY_HOME_SHOW_SRC_ROW], prefs[KEY_HOME_CHIP_MODE])
+    }
+
     val homeDefaultCategoryFlow: Flow<String> = dataStore.data.map { it[KEY_HOME_DEFAULT_CATEGORY] ?: "推荐" }
     val homeDefaultSourceFlow: Flow<String> = dataStore.data.map { it[KEY_HOME_DEFAULT_SOURCE] ?: "" }
 
@@ -377,7 +402,10 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
 
     suspend fun setHomeShowKeywords(v: Boolean) = dataStore.edit { it[KEY_HOME_SHOW_KEYWORDS] = v }
 
-    suspend fun setHomeChipMode(v: String) = dataStore.edit { it[KEY_HOME_CHIP_MODE] = v }
+    // v2.5：两个独立开关（旧的三档键只读不写，只作老数据回落用）
+    suspend fun setHomeShowCategoryRow(v: Boolean) = dataStore.edit { it[KEY_HOME_SHOW_CAT_ROW] = v }
+    suspend fun setHomeShowSourceRow(v: Boolean) = dataStore.edit { it[KEY_HOME_SHOW_SRC_ROW] = v }
+
     suspend fun setHomeDefaultCategory(v: String) = dataStore.edit { it[KEY_HOME_DEFAULT_CATEGORY] = v }
     suspend fun setHomeDefaultSource(v: String) = dataStore.edit { it[KEY_HOME_DEFAULT_SOURCE] = v }
 
@@ -581,7 +609,12 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
                     KEY_HOME_SHOW_SUBTITLE.name -> prefs[KEY_HOME_SHOW_SUBTITLE] = asBool(value)
                     KEY_SHOW_BAR_IN_READER.name -> prefs[KEY_SHOW_BAR_IN_READER] = asBool(value)
                     KEY_REFRESH_ON_LAUNCH.name -> prefs[KEY_REFRESH_ON_LAUNCH] = asBool(value)
+                    // 旧的三档键仍然接收：老备份文件里只有它，恢复时要能落进 DataStore，
+                    // 新键缺失时由 [HomeRows] 现算出两行的显隐。
                     KEY_HOME_CHIP_MODE.name -> prefs[KEY_HOME_CHIP_MODE] = value
+                    // v2.5：两个独立开关
+                    KEY_HOME_SHOW_CAT_ROW.name -> prefs[KEY_HOME_SHOW_CAT_ROW] = asBool(value)
+                    KEY_HOME_SHOW_SRC_ROW.name -> prefs[KEY_HOME_SHOW_SRC_ROW] = asBool(value)
                     KEY_HOME_DEFAULT_CATEGORY.name -> prefs[KEY_HOME_DEFAULT_CATEGORY] = value
                     KEY_HOME_DEFAULT_SOURCE.name -> prefs[KEY_HOME_DEFAULT_SOURCE] = value
                     KEY_RSSHUB_INSTANCE.name -> prefs[KEY_RSSHUB_INSTANCE] = value
@@ -678,8 +711,11 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         KEY_HOME_SHOW_LAYOUT, KEY_HOME_SHOW_REFRESH, KEY_HOME_SHOW_SUBTITLE,
         KEY_SHOW_BAR_IN_READER, KEY_REFRESH_ON_LAUNCH, KEY_AUTOREAD, KEY_NOTIFY,
         KEY_PRELOAD_AUTO, KEY_PRELOAD_WIFI_ONLY, KEY_TTS_RATE, KEY_TTS_NOTIFY, KEY_REFRESH,
-        // v2.0.2：首页筛选也算「个性化设置」，跟着备份走
+        // v2.0.2：首页筛选也算「个性化设置」，跟着备份走。
+        // 旧的三档键保留在列表里：老备份文件只认它，恢复时要能一起带过来。
         KEY_HOME_CHIP_MODE, KEY_HOME_DEFAULT_CATEGORY, KEY_HOME_DEFAULT_SOURCE,
+        // v2.5：三档拆成两个独立开关（分类行 / 阅源行）
+        KEY_HOME_SHOW_CAT_ROW, KEY_HOME_SHOW_SRC_ROW,
         // v2.1：RSSHub 实例。自建实例的地址是用户自己搭出来的东西，
         // 换手机时不跟过去会让人以为「自建的那个丢了」，所以进备份。
         KEY_RSSHUB_INSTANCE,

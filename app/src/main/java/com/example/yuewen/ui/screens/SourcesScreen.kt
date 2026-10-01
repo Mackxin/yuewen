@@ -564,7 +564,12 @@ private fun DiscoverPane(vm: SourcesViewModel) {
             }
         }
 
-        val list = vm.catalogFor(group)
+        // ⚠️ 下面这三处都是「纯计算」，但以前写在组合体里 —— 页面里任何一个状态
+        // （输入框每敲一个字、订阅状态变化）都会把 36 个源的列表重算好几遍。
+        // catalogFor / featured 只跟常量目录表有关，remember 住即可。
+        val list = remember(group) { vm.catalogFor(group) }
+        val featured = remember { FeedCatalog.featured() }
+        val featuredPending = remember(featured, subscribed) { featured.any { !isSub(it.url) } }
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -575,10 +580,10 @@ private fun DiscoverPane(vm: SourcesViewModel) {
                 item(key = "featured_header") {
                     FeaturedHeader(
                         onSubscribeAll = { vm.subscribeAllFeatured() },
-                        anyPending = FeedCatalog.featured().any { !isSub(it.url) }
+                        anyPending = featuredPending
                     )
                 }
-                items(FeedCatalog.featured(), key = { "f_" + it.url }) { f ->
+                items(featured, key = { "f_" + it.url }) { f ->
                     CatalogRow(feed = f, subscribed = isSub(f.url), onSubscribe = { vm.subscribe(f) })
                 }
                 item(key = "all_header") {

@@ -349,10 +349,15 @@ fun YuewenTheme(
         }
     }
 
+    // ⚠️ 这里必须 remember：`scaledTypography()` 内部会 new 出一整套 TextStyle，
+    // 直接在参数里调它，等于每次重组都重新分配几十个对象，还会让所有用到
+    // `MaterialTheme.typography` 的组件被判定为「参数变了」而跟着重组。
+    val typography = remember(fontScale) { scaledTypography(fontScale) }
+
     MaterialTheme(
         colorScheme = colorScheme,
         shapes = YuewenShapes,
-        typography = scaledTypography(fontScale),
+        typography = typography,
         content = content
     )
 }

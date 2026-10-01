@@ -14,7 +14,7 @@ object AppLinks {
     const val OFFICIAL_SITE = "http://yihaozhan.xyz/"
 
     /** 开源仓库（GitHub）。填成 `https://github.com/xxx/yyy`。 */
-    const val GITHUB_REPO = ""
+    const val GITHUB_REPO = "https://github.com/Mackxin/yuewen"
 
     /** 地址还没上线时显示在行尾的占位文案。 */
     const val PLACEHOLDER = "暂未上线"

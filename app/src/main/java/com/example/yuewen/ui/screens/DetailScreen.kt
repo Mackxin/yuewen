@@ -73,6 +73,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -796,7 +798,9 @@ private fun DetailPage(
     val blocks = remember(link, body) { BodyBlocks.parse(body, a.link) }
     val shortFeed = a.content.length < 1200
     val fetching = loading && !hasFullText(a)
-    val progress = if (scroll.maxValue > 0) scroll.value.toFloat() / scroll.maxValue else 0f
+    // 注：阅读进度**不在这里取值**。`scroll.value` 是每帧都变的高频状态，
+    // 在组合阶段读到变量里，等于让下面那一大片正文每滚一帧就整体重组一次 ——
+    // 文章越长越卡。进度条的取值改到它自己的绘制 lambda 里，见下面那条注释。
 
     // ---- 段落定位（朗读跟随 / 大纲跳转共用） ----
     // ⚠️ 这里只存「坐标对象」，不存算好的 y 值。踩过的坑，记一下：
@@ -884,14 +888,27 @@ private fun DetailPage(
 
     Column(modifier = Modifier.fillMaxSize()) {
         // 阅读进度条
-        Box(modifier = Modifier.fillMaxWidth().height(2.dp).background(palette.ink.copy(alpha = 0.07f))) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(progress)
-                    .height(2.dp)
-                    .background(cs.primary)
-            )
-        }
+        //
+        // ⚠️ v2.5 修卡顿：进度必须在**绘制阶段**读 `scroll.value`。
+        // 以前写成 `Modifier.fillMaxWidth(progress)`，而 `progress` 是在组合期算好的 ——
+        // Compose 只有「在 drawBehind / graphicsLayer 的 lambda 内部读」才算绘制阶段读取
+        // （只重绘、不重组）；在 lambda 外面读一遍再传进去，等于退回组合期读取，
+        // 于是滚动时**整篇正文每帧重组**，长文尤其明显。
+        // 顺带一提：同一个函数上面那段注释专门讲「不能在有副作用的地方读 scroll.value」，
+        // 而这里恰恰是它的另一半 —— 组合期读同样不行。
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(2.dp)
+                .background(palette.ink.copy(alpha = 0.07f))
+                .drawBehind {
+                    val p = if (scroll.maxValue > 0) scroll.value.toFloat() / scroll.maxValue else 0f
+                    drawRect(
+                        color = cs.primary,
+                        size = Size(size.width * p.coerceIn(0f, 1f), size.height)
+                    )
+                }
+        )
 
         Column(
             modifier = Modifier

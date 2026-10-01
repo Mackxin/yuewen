@@ -33,21 +33,11 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
-/**
- * 首页顶栏胶囊用哪种维度筛选（v2.0.2）。
- *
- * 以前顶栏只有「分类」一行；现在可以只显示分类、只显示阅源，或者两行都显示
- * （上分类、下阅源，两级筛选叠加）。
- */
-enum class HomeChipMode(val key: String, val label: String) {
-    Category("category", "分类"),
-    Source("source", "阅源"),
-    Both("both", "都显示");
-
-    companion object {
-        fun of(key: String?): HomeChipMode = entries.firstOrNull { it.key == key } ?: Category
-    }
-}
+// v2.5 删掉了 [HomeChipMode] 这个三档枚举。
+// 它描述的是「分类行 / 阅源行各自要不要显示」这件事，用一把三档开关表达反而绕
+// （「按分类」到底在说筛选口径还是这一行？）。现在拆成两个独立的布尔开关：
+// `showCategoryRow` / `showSourceRow`，语义一眼可见，四种组合都能表达。
+// 老数据（`home_chip_mode`）的兼容规则在 data/util/HomeRows.kt，有离线测试钉着。
 
 /** 首页列表的一行：要么是日期分组的标题，要么是一篇文章。 */
 sealed interface HomeRow {
@@ -96,17 +86,20 @@ class HomeViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), listOf("推荐"))
 
     /**
-     * 顶栏胶囊用哪种维度（分类 / 阅源 / 都显示）。
+     * 首页显不显示「分类」那一行（v2.5，设置里可关）。
      *
      * 刻意用 `Eagerly`（而不是别处惯用的 `WhileSubscribed`）：这个值会被**同步读**
-     * （`chipMode.value`，见 init 里「别处切分类时首页跟不跟」那段）。用 `WhileSubscribed`
-     * 的话，首页不在前台就没人订阅它，`.value` 会停在初始值 —— 用户在设置页把顶栏改成
-     * 「阅源」，回到首页时会被过时的 Category 判断误导，把「分类」这一级悄悄设上，
+     * （`showCategoryRow.value`，见 init 里「别处切分类时首页跟不跟」那段）。用
+     * `WhileSubscribed` 的话，首页不在前台就没人订阅它，`.value` 会停在初始值 ——
+     * 用户在设置页关掉分类行，回到首页时会被过时判断误导，把「分类」这一级悄悄设上，
      * 列表被一个界面上根本看不见的条件筛成空的。
      */
-    val chipMode: StateFlow<HomeChipMode> = settings.homeChipModeFlow
-        .map { HomeChipMode.of(it) }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, HomeChipMode.Category)
+    val showCategoryRow: StateFlow<Boolean> = settings.homeShowCategoryRowFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    /** 首页显不显示「阅源名称」那一行（v2.5，设置里可关）。同样 `Eagerly`，理由同上。 */
+    val showSourceRow: StateFlow<Boolean> = settings.homeShowSourceRowFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     /**
      * 当前筛选的两个维度：
@@ -273,23 +266,22 @@ class HomeViewModel(
         viewModelScope.launch {
             settings.ensureSeeded()
             applyDefaultFilter()
-            // 顶栏显示模式改了要顺手清掉「看不见的那一级筛选」：
-            // 只显示阅源时分类不参与筛选，只显示分类时阅源不参与 ——
-            // 否则会出现「界面上没有这个条件，列表却被它筛着」的灵异现象。
-            // 这里 collect 的是已经解析好的 [chipMode]（Eagerly，见属性上的注释），
-            // 顺带保证别处同步读 `chipMode.value` 拿到的一定是最新值。
-            chipMode.collect { mode ->
-                when (mode) {
-                    HomeChipMode.Category -> _source.value = ""
-                    HomeChipMode.Source -> _category.value = "推荐"
-                    HomeChipMode.Both -> Unit
-                }
+            // 某一行被关掉时，要顺手清掉「看不见的那一级筛选」——
+            // 否则会出现「界面上根本没有这个条件，列表却被它筛着」的灵异现象，
+            // 而且用户找不到任何可以取消的地方（v2.0.2 的老规矩）。
+            // 这里 collect 的是已经解析好的 [showCategoryRow] / [showSourceRow]
+            // （Eagerly，见属性上的注释），顺带保证别处同步读 `.value` 拿到的一定是最新值。
+            launch {
+                showCategoryRow.collect { if (!it) _category.value = "推荐" }
+            }
+            launch {
+                showSourceRow.collect { if (!it) _source.value = "" }
             }
         }
         // 别处要求换分类时（加完阅源自动切到它所在的分类、恢复备份）首页跟着走
         viewModelScope.launch {
             settings.categoryFlow.drop(1).collect { cat ->
-                if (cat.isNotBlank() && chipMode.value != HomeChipMode.Source) _category.value = cat
+                if (cat.isNotBlank() && showCategoryRow.value) _category.value = cat
             }
         }
         // v2.4：关键词被删掉时，如果首页正好还筛着那个词，必须主动把筛选撤掉。
@@ -309,21 +301,22 @@ class HomeViewModel(
      *
      * 全部做了兜底：指定的阅源可能已经被删掉，也可能不在指定的分类里。
      * 宁可放宽条件（回到推荐 / 全部阅源），也不要让用户一打开就是一片空白。
-     * 另外，顶栏不显示的那一级不参与筛选（否则用户看不到条件却被筛着）。
+     * 另外，那一行没显示的话它就不参与筛选（否则用户看不到条件却被筛着）。
      */
     private suspend fun applyDefaultFilter() {
-        val mode = HomeChipMode.of(settings.homeChipModeFlow.first())
+        val showCat = settings.homeShowCategoryRowFlow.first()
+        val showSrc = settings.homeShowSourceRowFlow.first()
         val cat = settings.homeDefaultCategoryFlow.first().ifBlank { "推荐" }
         val src = settings.homeDefaultSourceFlow.first()
         val enabled = settings.sourcesFlow.first().filter { it.enabled }
         val target = enabled.firstOrNull { it.name == src }
         _category.value = when {
-            mode == HomeChipMode.Source -> "推荐"
+            !showCat -> "推荐"
             target == null -> cat
             cat == "推荐" || target.category == cat -> cat
             else -> "推荐"
         }
-        _source.value = if (mode == HomeChipMode.Category) "" else target?.name.orEmpty()
+        _source.value = if (!showSrc) "" else target?.name.orEmpty()
     }
 
     /**

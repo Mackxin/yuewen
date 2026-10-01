@@ -82,7 +82,6 @@ import com.example.yuewen.ui.components.FolderPickerDialog
 import com.example.yuewen.ui.util.BrowserLauncher
 import com.example.yuewen.ui.util.formatRelativeTime
 import com.example.yuewen.ui.util.titleOrDefault
-import com.example.yuewen.ui.viewmodel.HomeChipMode
 import com.example.yuewen.ui.viewmodel.HomeRow
 import com.example.yuewen.ui.viewmodel.HomeViewModel
 import kotlinx.coroutines.launch
@@ -110,7 +109,10 @@ fun HomeScreen(
     // v2.0.2：必须在这里订阅一次 —— sources 是 WhileSubscribed 的 StateFlow，
     // 没人订阅时它的 .value 一直是空列表，阅源筛选行就会一个源名都列不出来。
     val sources by vm.sources.collectAsStateWithLifecycle()
-    val chipMode by vm.chipMode.collectAsStateWithLifecycle()
+    // v2.5：分类行 / 阅源行各自一个开关（设置 →「外观 → 首页筛选」里改）。
+    // 这里订阅一次，是为了 HomeChipRow 渲染时拿得到最新值。
+    val showCategoryRow by vm.showCategoryRow.collectAsStateWithLifecycle()
+    val showSourceRow by vm.showSourceRow.collectAsStateWithLifecycle()
     val category by vm.category.collectAsStateWithLifecycle()
     val sourceFilter by vm.source.collectAsStateWithLifecycle()
     // v2.4：关键词胶囊
@@ -316,9 +318,8 @@ fun HomeScreen(
             // ---------------- 筛选胶囊（分类 / 阅源） ----------------
             // v2.0.2：顶栏胶囊支持两种维度，具体显示哪些由「设置 → 外观 → 首页筛选」决定。
             // 两个都显示时是**两级筛选**：上面选分类，下面选该分类里的阅源。
-            val showCatRow = chipMode != HomeChipMode.Source
-            val showSrcRow = chipMode != HomeChipMode.Category
-            if (showCatRow) {
+            // v2.5：显隐判断直接落到两个独立开关上，VM 那边负责「关掉某行就清掉那一级的筛选」。
+            if (showCategoryRow) {
                 HomeChipRow(
                     // 「推荐」在数据库里就是「不限分类」，胶囊上写成「全部」更好懂
                     items = categories.map { if (it == "推荐") "全部" to it else it to it },
@@ -326,7 +327,7 @@ fun HomeScreen(
                     onSelect = vm::selectCategory
                 )
             }
-            if (showSrcRow) {
+            if (showSourceRow) {
                 // v2.0.3：当前就是「全部阅源」（根本没筛源）时，不再摆一个高亮的「全部阅源」胶囊 ——
                 // 没筛的时候它只是白占一格；一旦选了具体源，它才出现，作为「取消筛选、回到全部」的入口。
                 val srcNames = vm.sourceNamesFor(category, sources)
@@ -387,29 +388,47 @@ fun HomeScreen(
                             when (row) {
                                 is HomeRow.Header -> DayHeader(row.label, row.count)
                                 is HomeRow.Item -> {
-                                    val link = row.article.link
+                                    val article = row.article
+                                    val link = article.link
                                     val checked = link in selectedLinks
-                                    ArticleCard(
-                                        article = row.article,
-                                        mode = mode,
-                                        selectionMode = selectionMode,
-                                        selected = checked,
-                                        onClick = {
+
+                                    // ⚠️ v2.5：回调一律 `remember` 住。
+                                    // 写在参数里的 lambda 每次重组都是**新引用**，ArticleCard 会因此
+                                    // 判定「参数变了」而无法跳过重组 —— 首页一屏十几张卡片一起重排，
+                                    // 滑动就发涩，进多选勾一下整屏还会闪。
+                                    // key 只放真正影响这段行为的量，别的都不放。
+                                    val onClick = remember(link, checked, selectionMode) {
+                                        {
                                             if (selectionMode) {
-                                                selectedLinks = if (checked) selectedLinks - link else selectedLinks + link
+                                                selectedLinks =
+                                                    if (checked) selectedLinks - link else selectedLinks + link
                                             } else {
                                                 onOpenArticle(link)
                                             }
-                                        },
-                                        onBookmark = { vm.toggleBookmark(link, !row.article.isBookmarked) },
-                                        onLongClick = {
-                                            if (selectionMode) {
-                                                selectedLinks = selectedLinks + link
-                                            } else {
-                                                actionTarget = row.article
-                                            }
-                                        },
-                                        modifier = Modifier.padding(bottom = if (mode == ArticleListMode.Compact) 6.dp else 11.dp)
+                                        }
+                                    }
+                                    val onBookmarkClick = remember(link, article.isBookmarked) {
+                                        { vm.toggleBookmark(link, !article.isBookmarked) }
+                                    }
+                                    val onLongPress = remember(link, selectionMode) {
+                                        {
+                                            if (selectionMode) selectedLinks = selectedLinks + link
+                                            else actionTarget = article
+                                        }
+                                    }
+                                    val itemPadding = remember(mode) {
+                                        Modifier.padding(bottom = if (mode == ArticleListMode.Compact) 6.dp else 11.dp)
+                                    }
+
+                                    ArticleCard(
+                                        article = article,
+                                        mode = mode,
+                                        selectionMode = selectionMode,
+                                        selected = checked,
+                                        onClick = onClick,
+                                        onBookmark = onBookmarkClick,
+                                        onLongClick = onLongPress,
+                                        modifier = itemPadding
                                     )
                                 }
                             }

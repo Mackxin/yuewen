@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -28,11 +27,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -56,6 +56,8 @@ import com.example.yuewen.ui.screens.StatsScreen
 import com.example.yuewen.ui.screens.StorageScreen
 import com.example.yuewen.ui.screens.WenjianScreen
 import com.example.yuewen.ui.util.rememberImeDismiss
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 /**
  * 底部胶囊栏占用的高度。页面内容与阅读正文都要按这个留出空档，别被压住。
@@ -74,7 +76,6 @@ fun MainScreen() {
     val app = context.applicationContext as YuewenApplication
     // 记住列表实例：原来每次重组都新建一份，白白带着底栏一起重组
     val tabs = remember { Screen.bottomTabs() }
-    var selectedTab by remember { mutableStateOf<Screen>(Screen.Home) }
     var detailLink by remember { mutableStateOf<String?>(null) }
     var showAddSource by remember { mutableStateOf(false) }
     var showRssHub by remember { mutableStateOf(false) }
@@ -86,6 +87,42 @@ fun MainScreen() {
     var showSearch by remember { mutableStateOf(false) }
 
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { tabs.size })
+    val scope = rememberCoroutineScope()
+
+    /**
+     * 当前 Tab —— **从 Pager 派生**，不再单独存一份 state（v2.5）。
+     *
+     * 以前是「两个状态互相回写」：`selectedTab` 变了去滚 pager，pager 停下又回写
+     * `selectedTab`。这套双向同步在跳页动画**被打断**时会振荡 —— 用户点「设置」，
+     * 动画途经「阅源」时 pager 停下并回写 `selectedTab = 阅源`，于是又发起一次
+     * 从阅源出发的跳转，看到的就是「先跳到阅源、再弹到设置」。
+     *
+     * 现在只有一份真相（Pager 自己），`selectedTab` 是它的投影，振荡从结构上消失。
+     */
+    val selectedTab: Screen by remember {
+        derivedStateOf { tabs.getOrNull(pagerState.currentPage) ?: Screen.Home }
+    }
+
+    /**
+     * 切到某个 Tab。
+     *
+     * ⚠️ **跨页用瞬切、不用滑动动画**（v2.5 修卡顿）。原因：
+     * `animateScrollToPage(3)` 是连续滚动，会真的把内容从第 0 页一路推过第 1、2 页；
+     * 而 pager 设了 `beyondViewportPageCount = 0`（只组合视口内的页）——
+     * 于是途经的每一页都会被**现场组合**：各自 `viewModel(...)` 新建实例、订阅 Room 流、
+     * 跑一遍排序，全在主线程上。既让人看到「唰地路过阅源」，又明显掉帧。
+     * 相邻页只差一步，动画便宜也好看，保留。
+     */
+    val goTo: (Screen) -> Unit = { tab ->
+        val from = pagerState.currentPage
+        val idx = tabs.indexOf(tab)
+        if (idx >= 0 && idx != from) {
+            scope.launch {
+                if (abs(idx - from) > 1) pagerState.scrollToPage(idx)
+                else pagerState.animateScrollToPage(idx)
+            }
+        }
+    }
 
     // 收键盘：打开文章、切底栏 Tab 之前先收掉，否则输入法会跟着飘到新页面上
     val dismissIme = rememberImeDismiss()
@@ -171,24 +208,14 @@ fun MainScreen() {
             showAbout -> showAbout = false                         // 关于页 → 关
             showAddSource -> showAddSource = false                 // 加源页 → 关
             showSearch -> showSearch = false                        // 搜索浮层 → 关
-            else -> selectedTab = Screen.Home                      // 非首页 Tab → 回首页
+            else -> goTo(Screen.Home)                              // 非首页 Tab → 回首页
         }
     }
 
-    // 滑动 → 更新「当前在哪一页」这个逻辑状态。
-    // 注意：底栏的**视觉位置**不靠这里，而是把 pagerState 直接交给底栏，
-    // 由 Pager 的滑动进度连续驱动 —— 所以拖动过程中底栏是跟着手指走的，不会等停下来才跳。
-    LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage to pagerState.isScrollInProgress }
-            .collect { (page, scrolling) ->
-                if (!scrolling) tabs.getOrNull(page)?.let { if (it != selectedTab) selectedTab = it }
-            }
-    }
-    // 点底栏 → 翻到对应页
-    LaunchedEffect(selectedTab) {
-        val idx = tabs.indexOf(selectedTab)
-        if (idx >= 0 && idx != pagerState.currentPage) pagerState.animateScrollToPage(idx)
-    }
+    // 注：这里**不再需要**「pager ↔ selectedTab 双向同步」那两段 LaunchedEffect。
+    // 底栏的**视觉位置**本来就是把 pagerState 直接交给底栏、由滑动进度连续驱动的
+    // （拖动时跟手，不会等停下来才跳）；而「当前在哪一页」现在也直接派生自 pagerState。
+    // 谁都不需要回写谁，就没有动画被打断时来回弹跳的余地了。
 
     Box(modifier = Modifier.fillMaxSize()) {
         HorizontalPager(
@@ -227,7 +254,7 @@ fun MainScreen() {
                         onOpenGuide = { showGuide = true },
                         // 「我的阅源」入口：直接切到「阅源」Tab（不新开页面，
                         // 因为那个页面本来就是底部第三个 Tab，再叠一层浮层反而怪）
-                        onOpenSources = { selectedTab = Screen.Sources }
+                        onOpenSources = { goTo(Screen.Sources) }
                     )
                     else -> Unit
                 }
@@ -286,7 +313,7 @@ fun MainScreen() {
                     // v2.4：搜索浮层同理 —— 它盖在 Pager 上，不关掉的话点底栏也像「没反应」
                     if (showSearch) showSearch = false
                     dismissIme()
-                    selectedTab = tab
+                    goTo(tab)
                 },
                 unreadCount = if (showUnreadBadge) unread else 0,
                 modifier = Modifier.align(Alignment.BottomCenter)
