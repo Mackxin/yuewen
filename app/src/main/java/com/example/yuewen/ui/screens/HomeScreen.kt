@@ -442,9 +442,9 @@ fun HomeScreen(
                         state = listState,
                         modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
                         // v2.6：顶部留白 = 状态栏 + 顶栏。内容因此会从顶栏和状态栏下面穿过去。
-                        // v2.7：底部留白改由 [bottomInset] 承担 —— 底栏只在四个按钮那一行有实底
-                        // （v2.7.2），列表要一直画到屏幕最底边、从底栏后面穿过去；但滚到最后一项时
-                        // 得留出一段空白，否则最后一张卡片会被底栏压住看不见。
+                        // v2.7.3：底部留白改由 [bottomInset] 承担 —— 底栏收成了**浮动胶囊**，
+                        // 列表要一直画到屏幕最底边、从胶囊后面穿过去；但滚到最后一项时
+                        // 得留出一段空白，否则最后一张卡片会被胶囊压住看不见。
                         contentPadding = PaddingValues(top = listTop + 2.dp, bottom = bottomInset + 20.dp)
                     ) {
                         // ---------------- 筛选胶囊（分类 / 阅源 / 关键词）----------------

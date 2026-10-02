@@ -73,6 +73,8 @@ import kotlin.math.abs
  * v1.9：胶囊本体 ≈ 34dp + 上下各 7dp 外边距 ≈ 48dp，BAR_INSET 从 70dp 收到 58dp。
  * v2.0：朗读悬浮条会临时叠在底栏之上，[MainScreen] 会在这个基础上再加一段高度。
  * v2.6：底栏底部外边距 7 → 13dp（用户要求「整体再往上走一点」），58 → 64dp。
+ * v2.7.3：底栏改成浮动胶囊（左右 16dp 外边距 + 上下 7/13dp 空隙），
+ *   胶囊本体仍是按钮那一行的 ~34dp，总占位不变，**这个常量不用改**。
  *
  * ⚠️ 沉浸式之后，页面底部的实际留白 = `BAR_INSET + 导航栏 inset`，
  * 所以要留空的地方一律用 [MainScreen] 里算好的 `contentInset`，别直接写这个常量。
@@ -284,27 +286,24 @@ fun MainScreen() {
             // 不补的话标题会被状态栏压住。
             val immersive = tabs[page] == Screen.Home || tabs[page] == Screen.Wenjian
 
-            /**
-             * v2.7：这一页的内容要不要「画到屏幕最底边、从底栏后面穿过去」。
-             *
-             * 底栏只在**四个按钮那一行**铺了一层与页面同色的实底（v2.7.2），
-             * 上下留白是透的，所以列表穿过底栏时能看见内容 ——
-             * 但**只有列表里出现白色卡片时**才看得出差别 —— 卡片是 `surface`（纯白），
-             * 底栏那条底是 `background`，两者相接就是一道明显的分界。
-             *
-             * 所以：
-             * - 首页 / 闻件 —— 列表是白色卡片（ArticleCard），必须穿透。它们不能在这里压
-             *   `padding(bottom)`（压了就穿不过去），改由各自列表的 `contentPadding` 留白，
-             *   见各页的 `bottomInset` 参数。少了那一步，最后一张卡片会被底栏压住。
-             * - 阅源 / 设置 —— 整页都是 `background` 底色、没有卡片，底栏区域和内容本来就同色，
-             *   看不出分界。保持原来的 `padding` 即可：改动最小，也顺带不会漏掉哪条列表。
-             */
-            val penetrate = tabs[page] == Screen.Home || tabs[page] == Screen.Wenjian
-
+            // ---------------- v2.7.3：四个页面一律穿透 ----------------
+            //
+            // 底栏现在是个**浮动胶囊**（见 `YuewenBottomBar`）—— 左右留缝、全圆角、
+            // 浮在内容之上。既然它是个「浮起来的实体」，这里就不再分「穿不穿」：
+            // 四个页面一律穿透，内容一路画到屏幕最底边，滚到底时从胶囊**下面**滑过去。
+            //
+            // v2.7 时这里还按「列表里有没有白色卡片」分了两路（只有首页 / 闻件穿透）。
+            // 那是被「底栏铺一层 `cs.background`、且横贯整屏」这个前提逼出来的补丁 ——
+            // 通栏的色带一旦跟页面比，就得逐页判断会不会出现「色差分界」。
+            // 现在收成胶囊、两条左右的缝就是天然的分界，这个前提没了；
+            // 分区对待反而制造了新的不一致（用户原话「你还不一样」）。
+            //
+            // ⚠️ 代价：底部留白必须由**每一页自己**承担（列表的 `contentPadding`、
+            // 或滚动内容末尾的 `Spacer`）。四个页面都收到了 `bottomInset = contentInset`，
+            // 一个都不能漏 —— 漏了那页的最后一项就会被胶囊压住。
             Box(
                 Modifier
                     .fillMaxSize()
-                    .then(if (penetrate) Modifier else Modifier.padding(bottom = contentInset))
                     .then(if (immersive) Modifier else Modifier.statusBarsPadding())
             ) {
                 when (tabs[page]) {
@@ -323,7 +322,8 @@ fun MainScreen() {
                     Screen.Sources -> SourcesScreen(
                         app = app,
                         onOpenAddSource = { showAddSource = true },
-                        onOpenRssHub = { showRssHub = true }
+                        onOpenRssHub = { showRssHub = true },
+                        bottomInset = contentInset
                     )
                     Screen.Settings -> SettingsScreen(
                         app = app,
@@ -332,6 +332,7 @@ fun MainScreen() {
                         onOpenStats = { showStats = true },
                         onOpenStorage = { showStorage = true },
                         onOpenGuide = { showGuide = true },
+                        bottomInset = contentInset,
                         // 「我的阅源」入口：直接切到「阅源」Tab（不新开页面，
                         // 因为那个页面本来就是底部第三个 Tab，再叠一层浮层反而怪）
                         onOpenSources = { goTo(Screen.Sources) }

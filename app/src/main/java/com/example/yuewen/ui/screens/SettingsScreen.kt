@@ -544,7 +544,15 @@ fun SettingsScreen(
     onOpenStats: () -> Unit = {},
     onOpenStorage: () -> Unit = {},
     onOpenGuide: () -> Unit = {},
-    onOpenSources: () -> Unit = {}
+    onOpenSources: () -> Unit = {},
+    /**
+     * v2.7.3：底栏高度（含导航栏 inset）。
+     *
+     * 底栏改成浮动胶囊之后，四个页面**统一穿透** —— 内容一路画到屏幕最底边、
+     * 从胶囊下面穿过去。所以这一页不能再靠父层 `padding(bottom)` 让位，
+     * 底部留白由滚动内容末尾那个 `Spacer` 承担。
+     */
+    bottomInset: Dp = 0.dp
 ) {
     val vm: SettingsViewModel = viewModel(factory = SettingsViewModel.provide(app))
     val theme by vm.theme.collectAsStateWithLifecycle()
@@ -1385,7 +1393,9 @@ fun SettingsScreen(
                 )
             }
         }
-        Spacer(Modifier.height(24.dp))
+        // v2.7.3：底栏是浮动胶囊、内容从它下面穿过 —— 底部留白由这一页自己承担
+        //（父层不再压 padding，压了就穿不过去）。24dp 是原本的收尾留白，另加底栏高度。
+        Spacer(Modifier.height(bottomInset + 24.dp))
     }
 
     // ---------------- v2.0：备份 / 恢复 ----------------

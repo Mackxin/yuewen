@@ -67,6 +67,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -97,7 +98,15 @@ import kotlinx.coroutines.delay
 fun SourcesScreen(
     app: YuewenApplication,
     onOpenAddSource: () -> Unit,
-    onOpenRssHub: () -> Unit
+    onOpenRssHub: () -> Unit,
+    /**
+     * v2.7.3：底栏高度（含导航栏 inset）。
+     *
+     * 底栏现在是**浮动胶囊**，内容一路画到屏幕最底边、从它下面穿过去，
+     * 所以这一页不能再靠父层 `padding(bottom)` 让位（那就穿不过去了）——
+     * 底部留白改由这一页自己的列表 `contentPadding` 承担。
+     */
+    bottomInset: Dp = 0.dp
 ) {
     val vm: SourcesViewModel = viewModel(factory = SourcesViewModel.provide(app))
     val sources by vm.sources.collectAsStateWithLifecycle()
@@ -189,10 +198,11 @@ fun SourcesScreen(
                 onEdit = { editing = it },
                 onDelete = { pendingDelete = it },
                 onTestAll = { vm.testAll() },
-                onRefresh = { vm.refreshSource(it) }
+                onRefresh = { vm.refreshSource(it) },
+                bottomInset = bottomInset
             )
         } else {
-            DiscoverPane(vm = vm)
+            DiscoverPane(vm = vm, bottomInset = bottomInset)
         }
     }
 
@@ -246,7 +256,8 @@ private fun MySourcesPane(
     onEdit: (FeedSource) -> Unit,
     onDelete: (FeedSource) -> Unit,
     onTestAll: () -> Unit,
-    onRefresh: (String) -> Unit
+    onRefresh: (String) -> Unit,
+    bottomInset: Dp = 0.dp
 ) {
     val cs = MaterialTheme.colorScheme
 
@@ -279,7 +290,9 @@ private fun MySourcesPane(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(top = 6.dp, bottom = 20.dp)
+        // v2.7.3：底栏是浮动胶囊、内容从它下面穿过，所以底部留白由列表自己承担
+        //（父层不再压 padding，压了就穿不过去）。
+        contentPadding = PaddingValues(top = 6.dp, bottom = bottomInset + 20.dp)
     ) {
         item(key = "tools") {
             Column(modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 10.dp, bottom = 8.dp)) {
@@ -462,7 +475,7 @@ private fun MySourcesPane(
 // ------------------------------------------------------------------ 发现推荐
 
 @Composable
-private fun DiscoverPane(vm: SourcesViewModel) {
+private fun DiscoverPane(vm: SourcesViewModel, bottomInset: Dp = 0.dp) {
     val cs = MaterialTheme.colorScheme
     val query by vm.query.collectAsStateWithLifecycle()
     val searching by vm.searching.collectAsStateWithLifecycle()
@@ -544,7 +557,8 @@ private fun DiscoverPane(vm: SourcesViewModel) {
                 searching = searching,
                 error = searchError,
                 isSub = ::isSub,
-                onSubscribe = { vm.subscribeRemote(it) }
+                onSubscribe = { vm.subscribeRemote(it) },
+                bottomInset = bottomInset
             )
             return@Column
         }
@@ -573,7 +587,7 @@ private fun DiscoverPane(vm: SourcesViewModel) {
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 20.dp)
+            contentPadding = PaddingValues(top = 8.dp, bottom = bottomInset + 20.dp)
         ) {
             // 精选区（只在「全部」时出现）：跨分类挑最稳的几家
             if (group == null) {
@@ -717,7 +731,8 @@ private fun SearchResults(
     searching: Boolean,
     error: String,
     isSub: (String) -> Boolean,
-    onSubscribe: (RemoteFeed) -> Unit
+    onSubscribe: (RemoteFeed) -> Unit,
+    bottomInset: Dp = 0.dp
 ) {
     val cs = MaterialTheme.colorScheme
 
@@ -734,7 +749,7 @@ private fun SearchResults(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(top = 6.dp, bottom = 20.dp)
+        contentPadding = PaddingValues(top = 6.dp, bottom = bottomInset + 20.dp)
     ) {
         if (error.isNotBlank()) {
             item(key = "err") {
