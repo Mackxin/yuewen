@@ -132,7 +132,7 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
     /** 首页顶栏「刷新」按钮是否显示（默认显示）。 */
     private val KEY_HOME_SHOW_REFRESH = booleanPreferencesKey("home_show_refresh")
 
-    /** 首页顶栏是否显示副标题（「更新于 xx · N 篇未读」，默认显示）。 */
+    /** 首页顶栏是否显示副标题（「1分钟前 · N 未读」，默认显示）。 */
     private val KEY_HOME_SHOW_SUBTITLE = booleanPreferencesKey("home_show_subtitle")
 
     /** 「闻件」页上次停留的子页（0 搜索 / 1 收藏 / 2 历史 / 3 笔记）。 */

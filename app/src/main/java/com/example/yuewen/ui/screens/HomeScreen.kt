@@ -284,19 +284,24 @@ fun HomeScreen(
                             Spacer(Modifier.height(2.dp))
                             Text(
                                 if (lastRefresh > 0) {
-                                    "更新于 ${formatRelativeTime(lastRefresh)}" + if (unread > 0) " · $unread 篇未读" else ""
+                                    // v2.7.2：用户要求「副标题不要换行」。
+                                    //
+                                    // 但只把 maxLines 改回 1 会退回到 v2.7.0 那个「…」的老问题 ——
+                                    // 所以这里**同时把文案压短**，让它一行真的放得下：
+                                    //   「更新于 1分钟前 · 379 篇未读」（约 139dp）→ 一行装不下 → 折行
+                                    //   「1分钟前 · 379 未读」        （约 105dp）→ 标题区约 136dp，放得下
+                                    // 去掉的是「更新于」（顶栏右侧就有 ↻，语义不丢）和量词「篇」。
+                                    // 最坏情况「12月31日 · 9999 未读」约 105dp，同样安全。
+                                    formatRelativeTime(lastRefresh) + if (unread > 0) " · $unread 未读" else ""
                                 } else {
                                     "下拉或点 ↻ 刷新"
                                 },
                                 style = MaterialTheme.typography.labelSmall,
                                 color = cs.onSurfaceVariant,
-                                // v2.7：用户要求副标题显示完整、不要三个点。
-                                // 顶栏右侧那排图标改窄（6 × 36dp）之后标题区宽了不少，
-                                // 「更新于 5 分钟前 · 36 篇未读」这类文案一行放不下时折第二行就行 ——
-                                // 顶栏高度是**实测**后喂给列表 contentPadding 的（见 topBarTotal），
-                                // 所以这里折行不会把内容顶掉，只会让列表的顶部留白自动长高。
-                                // 保留 Ellipsis 只是给极端长文案兜底，正常用不到。
-                                maxLines = 2,
+                                // softWrap = false：宁可按不动也不许折行（用户明确说折行不好看）。
+                                // Ellipsis 只是给「字体被系统放大到极端」这类情况兜底，正常用不到。
+                                maxLines = 1,
+                                softWrap = false,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
@@ -437,8 +442,8 @@ fun HomeScreen(
                         state = listState,
                         modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
                         // v2.6：顶部留白 = 状态栏 + 顶栏。内容因此会从顶栏和状态栏下面穿过去。
-                        // v2.7：底部留白改由 [bottomInset] 承担 —— 底栏从此**没有自己的底色**，
-                        // 列表要一直画到屏幕最底边、从底栏后面穿过去；但滚到最后一项时
+                        // v2.7：底部留白改由 [bottomInset] 承担 —— 底栏只在四个按钮那一行有实底
+                        // （v2.7.2），列表要一直画到屏幕最底边、从底栏后面穿过去；但滚到最后一项时
                         // 得留出一段空白，否则最后一张卡片会被底栏压住看不见。
                         contentPadding = PaddingValues(top = listTop + 2.dp, bottom = bottomInset + 20.dp)
                     ) {
