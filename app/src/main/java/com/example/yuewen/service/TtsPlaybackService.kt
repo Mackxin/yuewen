@@ -35,7 +35,10 @@ import kotlinx.coroutines.launch
  * 这里只做三件事：
  * 1. 挂一个常驻通知（进度 = 第几片 / 共几片，看起来就像个播放器）；
  * 2. 把通知上的按钮接到引擎的 pause / resume / stop；
- * 3. 「回到文章」按钮把 App 拉回前台并打开正在朗读的那一篇。
+ * 3. 「回到文章」（以及点通知本体）把 App 拉回前台并打开正在朗读的那一篇。
+ *
+ * ⚠️ 第 3 条**不能**由本服务自己 `startActivity()` —— Android 10 起后台启动 Activity 会被拦，
+ * 必须交给 `PendingIntent.getActivity()` 让系统去拉起。详见 [openArticleIntent]。
  *
  * 稳妥起见，[startForeground] 全部包在 runCatching 里：
  * 个别 ROM 会因为通知权限被关、或不允许该 FGS 类型而抛异常，
@@ -76,7 +79,6 @@ class TtsPlaybackService : Service() {
         when (intent?.action) {
             ACTION_TOGGLE -> tts?.toggle()
             ACTION_STOP -> tts?.stop()
-            ACTION_OPEN -> openArticle()
             else -> {
                 // 单纯被拉起：立刻挂上通知，避免「5 秒内没 startForeground」被杀
                 val t = tts ?: return START_NOT_STICKY
@@ -109,25 +111,44 @@ class TtsPlaybackService : Service() {
         val count: Int
     )
 
-    private fun openArticle() {
+    /**
+     * ⚠️ v2.7.1 修的坑：**点通知进不去 App**。
+     *
+     * 原来的做法是 contentIntent（点通知本体）和「回到文章」按钮都指向本服务的
+     * `ACTION_OPEN`，再由服务里 `startActivity()` 把 MainActivity 拉起来。
+     * 这条路在 **Android 10（API 29）起会被系统直接拦掉** ——
+     * 后台启动 Activity 有限制，前台服务也不在豁免名单里（那是留给闹钟、来电之类场景的口子）。
+     * 表现就是：点通知毫无反应，App 一动不动，日志里连个异常都没有。
+     *
+     * 正解：**别自己启动 Activity，让系统去启动** —— 用 `PendingIntent.getActivity()`。
+     * 从通知栏点击属于「用户主动交互」，系统会正常把 Activity 带到前台，不受那条限制。
+     *
+     * 链接通过 `EXTRA_OPEN_LINK` 传给 MainActivity：
+     * - Activity 还活着 → `onNewIntent` 接住（`singleTop` + `FLAG_ACTIVITY_CLEAR_TOP`）；
+     * - 进程被杀后冷启动 → `onCreate` 接住。
+     * 两条路都丢给 `YuewenApplication.requestOpenArticle()`，MainScreen 订阅到就打开那一篇。
+     * 于是 App 里**不需要**再留一条「服务转发」的备用路径。
+     */
+    private fun openArticleIntent(): PendingIntent {
         val link = tts?.link?.value.orEmpty()
-        val i = Intent(this, MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            if (link.isNotBlank()) putExtra(EXTRA_OPEN_LINK, link)
-        }
-        runCatching { startActivity(i) }
-        // 双重保险：Activity 已在栈顶时 onNewIntent 也拿得到；这里再往 App 上放一份，
-        // MainScreen 订阅到就会打开详情页（走的是和通知按钮同一条路径）。
-        (application as? YuewenApplication)?.requestOpenArticle(link)
+        return PendingIntent.getActivity(
+            this,
+            REQ_OPEN_ARTICLE,
+            Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                if (link.isNotBlank()) putExtra(EXTRA_OPEN_LINK, link)
+            },
+            flags()
+        )
     }
 
     private fun buildNotification(st: Status): Notification {
-        // 注意：这里只建三个 PendingIntent，全部挂在「通知上的按钮」上。
-        // 不需要额外的「点通知本体打开文章」的 activity PendingIntent ——
-        // 用 service 的 ACTION_OPEN 更省事：它能同时把 App 拉起来并让 MainScreen 打开那一篇。
+        // 三个 PendingIntent：两个挂 service（暂停/继续、停止），一个挂 activity（打开文章）。
         val toggleIntent = PendingIntent.getService(this, 2, intentOf(ACTION_TOGGLE), flags())
         val stopIntent = PendingIntent.getService(this, 3, intentOf(ACTION_STOP), flags())
-        val openFromNotif = PendingIntent.getService(this, 4, intentOf(ACTION_OPEN), flags())
+        // 点通知本体 与 「回到文章」按钮 复用同一个 —— 两处语义完全一样，
+        // 用两个的话还得让 requestCode 区别开，没意义。
+        val openFromNotif = openArticleIntent()
 
         val progress = if (st.count > 0) {
             "（${((st.index + 1).coerceAtMost(st.count) * 100) / st.count}%）"
@@ -204,7 +225,15 @@ class TtsPlaybackService : Service() {
 
         const val ACTION_TOGGLE = "com.example.yuewen.action.TTS_TOGGLE"
         const val ACTION_STOP = "com.example.yuewen.action.TTS_STOP"
-        const val ACTION_OPEN = "com.example.yuewen.action.TTS_OPEN"
+
+        /**
+         * 「打开朗读中的文章」那个 activity PendingIntent 的请求码。
+         *
+         * ⚠️ 别用 4 —— v2.7.0 及以前这里是个 `getService(…, 4, ACTION_OPEN)`，
+         * 老版本残留的 PendingIntent 在个别 ROM 上还会被复用。换个数最省事。
+         * 同时也要和 `RefreshWorker` 的 `REQ_OPEN_APP`（10）错开。
+         */
+        private const val REQ_OPEN_ARTICLE = 21
 
         /** 拉起前台服务（朗读开始时调）。失败安静吞掉，不影响出声。 */
         fun start(context: Context) {

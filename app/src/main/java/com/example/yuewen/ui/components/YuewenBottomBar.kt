@@ -3,6 +3,7 @@ package com.example.yuewen.ui.components
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -75,12 +76,16 @@ private const val PILL_ANIM_MS = 280
  * ## v2.6 其它改动
  * - 加 `navigationBarsPadding()`：沉浸式之后底栏会压在手势条上，得让开；
  * - 底部外边距从 7dp 加到 13dp —— 用户反馈「整体再往上走一点」；
- * - 曾短暂用过玻璃质感（v2.6.0），已按用户要求**整套撤掉**：
- *   底栏现在没有任何自己的底（无填充 / 无描边 / 无投影），只留图标文字 + 高亮块。
- *   因此本组件**不再接收 `glass` 参数** —— 玻璃开关只管首页顶栏和闻件标签栏。
+ * - 曾短暂用过玻璃质感（v2.6.0），已按用户要求**整套撤掉**；
+ *   底栏此后不接收 `glass` 参数 —— 玻璃开关只管首页顶栏和闻件标签栏。
  * - 未读数从「图标右上角的悬浮徽标」改成**跟在文字后面的一小段数字**：
  *   悬浮徽标会压在图标和文字上（`BadgedBox` 的徽标画在图标边界之外、且不参与布局，
  *   所以下面的文字不知道要给它让位）。详见 [BarItem]。
+ *
+ * ## v2.7.1
+ * 补回一层**与页面同色**的不透明底（详见下方 `background` 处的长注释）——
+ * v2.6.0 去掉底色 + v2.7.0 内容穿透，两者叠加导致首页 / 闻件的底栏「透明」、
+ * 而阅源 / 设置正常。现在四个 Tab 表现一致。
  */
 @Composable
 fun YuewenBottomBar(
@@ -136,19 +141,33 @@ fun YuewenBottomBar(
     // 计算一次即可，drawBehind 每帧会用
     val pillColor = cs.primary
 
-    // ---------------- v2.6.0：底栏不再有自己的底 ----------------
-    // 用户反馈「tab 栏那层灰色背景不要了，换成透明的」。查过截图确认：
-    // 那层底就是玻璃表面的半透明填充（0.76 alpha 叠在页面底色上，比四周深一档，
-    // 实测 (237,239,241) vs 页面 (245,247,249)）。
+    // ---------------- v2.7.1：底栏补回一层不透明底 ----------------
     //
-    // 现在整条底栏**没有填充、没有描边、没有投影**，直接露出页面背景 ——
-    // 视觉上只剩「四个图标文字 + 蓝色高亮块」，高亮块自己就能说明当前在哪一页。
+    // 来龙去脉（两次都改的是同一处，别只看一半）：
+    // - v2.6.0 用户说「tab 栏那层灰色背景不要了」→ 底栏变成了裸 Box，无填充 / 无描边 / 无投影。
+    //   当时看着没问题，是因为**内容根本画不到底栏后面**（父层 `padding(bottom = contentInset)`），
+    //   底下永远是一片干净的页面底色。
+    // - v2.7.0 首页 / 闻件改成了「真穿透」（内容能滑到底栏后面，见 MainScreen 的 `penetrate`），
+    //   于是同一套底栏在四个 Tab 上表现不一致：阅源 / 设置仍是「一条实色栏」，
+    //   首页 / 闻件却成了「四个图标直接浮在文章卡片上」。用户反馈：
+    //   「首页和闻件怎么按钮背景是透明的，在阅源和设置的时候又不是」。
     //
-    // 因此这里不套任何外壳，也不需要 CircleShape（没有底就无所谓外形）。
-    // 副作用：「液态玻璃」开关从此只作用于**首页顶栏**和**闻件标签栏**（设置页文案已同步）。
+    // 修法：给整条补一层**与页面同色**的不透明底。
+    //
+    // 为什么用 `background` 而不是 `surface`（纯白）：
+    // 阅源 / 设置页的底栏下面本来就是页面底色 —— 用 `background` 这两页**观感一像素不变**，
+    // 只是把首页 / 闻件的表现拉齐到同一套。也不想再引入一档「比页面深/浅一点」的新灰，
+    // 那正是 v2.6.0 被要求去掉的东西。
+    //
+    // ⚠️ `background(...)` 必须写在 `windowInsetsPadding` **之前**：
+    // 修饰符从左往右包，背景属于外层，这样它连**导航栏那一条**也一并铺满；
+    // 写在后面的话手势条区域会漏出来，又是一条异色带。
+    //
+    // 内容穿透**继续保留**：滚动时卡片从底栏下面滑过去，而不是在半空中被裁断。
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .background(cs.background)
             // ⚠️ 不是 `navigationBarsPadding()`：键盘弹起时导航栏躲在键盘后面，
             // 系统却仍报出它的高度 —— 直接用它会让底栏在键盘上方多浮一截。
             // `exclude(ime)` 表示「键盘在的时候这一段算 0」，
