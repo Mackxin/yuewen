@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
@@ -256,7 +257,12 @@ fun scaledTypography(scale: Float) = Typography(
 
 // ---------------- 阅读器配色 ----------------
 
-/** 阅读底色三选一：跟随主题 / 米黄纸感 / 墨夜。 */
+/**
+ * 阅读底色三选一：跟随主题 / 米黄纸感 / 墨夜。
+ *
+ * 「跟随主题」跟的是 **App 的主题设置**（浅色 / 深色 / 跟随系统），不是直接问系统 ——
+ * 用户在设置里手动选了深色，阅读页就该是深色，哪怕系统还是浅色。
+ */
 enum class ReaderTheme(val key: String, val label: String) {
     Auto("auto", "跟随主题"),
     Paper("paper", "米黄纸感"),
@@ -294,7 +300,8 @@ val ReaderSizeLabels = listOf("小", "标准", "大", "特大")
 
 /**
  * 当前生效的阅读配色。
- * @param onPaper true 表示纸感底色（需要把状态栏图标切成深色）
+ * @param onPaper true 表示底色本身是**浅色**（需要把状态栏图标切成深色）。
+ *   注意它描述的是「底色亮不亮」，不是「主题深不深」—— 米黄纸感在深色主题下也是 true。
  */
 data class ReaderPalette(
     val background: Color,
@@ -303,14 +310,37 @@ data class ReaderPalette(
     val onPaper: Boolean
 )
 
+/**
+ * 阅读页配色。
+ *
+ * ⚠️ **深浅一律看「当前生效的 `MaterialTheme.colorScheme`」，不接受外部传 `darkTheme`。**
+ *
+ * 这是 v2.7.4 修掉的一个真 bug：以前签名是 `readerPalette(theme, darkTheme)`，
+ * 而 `DetailScreen` 传的是 `isSystemInDarkTheme()` ——
+ * 于是「设置里手动选了深色、系统还是浅色」时，阅读页拿到的是下面那个硬编码的浅色底，
+ * 用户反馈「深色模式的时候文章内容界面没有变成深色」。
+ *
+ * 同一个教训在 [com.example.yuewen.ui.components.YuewenBottomBar] 也踩过：
+ * **要判断深浅就读当前生效的底色，别问系统。**
+ * `MaterialTheme.colorScheme` 已经是由 App 主题设置（浅色 / 深色 / 跟随系统）算好的结果，
+ * 再自己去问一次系统，就是第二份真相，迟早对不上。
+ *
+ * 顺带把「跟随主题」的浅色分支从硬编码 `#FCFDFB` 换成 `cs.background`
+ * —— 阅读页底色从此和 App 主题方案（含青绿 / 靛蓝 / 琥珀 / 自定义色相）严格一致。
+ */
 @Composable
-fun readerPalette(theme: ReaderTheme, darkTheme: Boolean): ReaderPalette = when (theme) {
-    ReaderTheme.Paper -> ReaderPalette(ReaderPaperBg, ReaderPaperInk, ReaderPaperInkVariant, true)
-    ReaderTheme.Night -> ReaderPalette(ReaderNightBg, ReaderNightInk, ReaderNightInkVariant, false)
-    ReaderTheme.Auto -> if (darkTheme) {
-        ReaderPalette(MaterialTheme.colorScheme.background, MaterialTheme.colorScheme.onBackground, MaterialTheme.colorScheme.onSurfaceVariant, false)
-    } else {
-        ReaderPalette(Color(0xFFFCFDFB), Color(0xFF1A1C1B), Color(0xFF5F6663), true)
+fun readerPalette(theme: ReaderTheme): ReaderPalette {
+    val cs = MaterialTheme.colorScheme
+    return when (theme) {
+        // 「跟随主题」= 完全交给当前配色方案，深浅与色相都跟着走
+        ReaderTheme.Auto -> ReaderPalette(
+            background = cs.background,
+            ink = cs.onBackground,
+            inkVariant = cs.onSurfaceVariant,
+            onPaper = cs.background.luminance() > 0.5f
+        )
+        ReaderTheme.Paper -> ReaderPalette(ReaderPaperBg, ReaderPaperInk, ReaderPaperInkVariant, true)
+        ReaderTheme.Night -> ReaderPalette(ReaderNightBg, ReaderNightInk, ReaderNightInkVariant, false)
     }
 }
 

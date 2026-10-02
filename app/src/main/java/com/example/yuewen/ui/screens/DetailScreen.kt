@@ -14,7 +14,6 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -201,11 +200,14 @@ fun DetailScreen(
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val darkTheme = isSystemInDarkTheme()
 
     val font = ReaderFont.of(readerFontKey)
     val spacing = ReaderSpacing.of(readerSpacingKey)
-    val palette = readerPalette(ReaderTheme.of(readerThemeKey), darkTheme)
+    // v2.7.4：不再往 readerPalette 传 `isSystemInDarkTheme()`。
+    // 那是「第二份真相」—— App 主题设置（浅色 / 深色 / 跟随系统）已经算出一个结果放在
+    // MaterialTheme 里了，这里再问一次系统，就会在「手动选深色 + 系统浅色」时对不上，
+    // 表现是「深色模式下文章内容界面没有变成深色」。现在一律以当前 colorScheme 为准。
+    val palette = readerPalette(ReaderTheme.of(readerThemeKey))
     val bodySp = ReaderSizes.getOrElse(readerSizeIdx) { 17 }
 
     var showTypePanel by remember { mutableStateOf(false) }
@@ -325,8 +327,11 @@ fun DetailScreen(
     // ReaderPalette 早就带了一个 onPaper 字段，但一直没人消费 —— 这里把它接上。
     // 离开时恢复成跟随 App 主题（Theme 那边的 SideEffect 只有主题变化时才会再跑，
     // 所以必须在这里手动还原）。
+    //
+    // v2.7.4：这里判断深浅也统一改用 `background`（原来用 `surface`）——
+    // 和 `readerPalette` / 底栏 / 设置页保持同一把尺子，别再出现两个口径。
     val view = LocalView.current
-    val appDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val appDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     DisposableEffect(palette.onPaper) {
         val window = (view.context as? Activity)?.window
         val controller = window?.let { WindowCompat.getInsetsController(it, view) }

@@ -124,7 +124,8 @@ fun GuideScreen(app: YuewenApplication, onBack: () -> Unit) {
             GuideCard(title = "换个颜色", icon = Icons.Filled.Palette) {
                 Text(
                     "设置 →「外观 → 配色方案」，八个色块点一下就换，整个界面立刻生效，不用重启。\n\n" +
-                            "每套配色都配了浅色和深色两版 —— 跟着系统的深浅模式自动切。" +
+                            "每套配色都配了浅色和深色两版 —— 深浅跟的是「设置 → 外观」里的选项" +
+                            "（跟随系统 / 浅色 / 深色），手动选了深色就是深色，不会因为系统还是浅色而变回去。" +
                             "文字压在上面的清晰度是按 WCAG 标准算过的，不会出现「白字压黄底看不清」那种情况。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = cs.onSurface
