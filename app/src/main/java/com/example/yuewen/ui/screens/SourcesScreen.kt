@@ -27,13 +27,15 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RssFeed
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -54,6 +56,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -261,6 +264,11 @@ private fun MySourcesPane(
 ) {
     val cs = MaterialTheme.colorScheme
 
+    // v2.8：顶部说明的展开状态。⚠️ 必须放在 LazyColumn **外面** ——
+    // 那个「tools」item 会随着列表滚动被回收，状态放在 item 里的话，
+    // 往下滚一格再滚回来，展开的说明就自己合上了。
+    var helpOpen by rememberSaveable { mutableStateOf(false) }
+
     if (sources.isEmpty()) {
         Column(
             modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
@@ -325,13 +333,50 @@ private fun MySourcesPane(
                         }
                     }
                 }
-                Text(
-                    "「测试全部」只检查每个源还能不能连上、有多少篇文章，不会拉文章，所以几十个源也能一次跑完。" +
-                        "\n想单独看某一个源：点它右边的 ↻，它会检查 + 拉取新文章，结果就显示在那一行下面。" +
-                        "\n点整行可以改名称 / 地址 / 分类；关掉开关就暂时不刷新它（已抓到的文章仍然留着）。",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = cs.onSurfaceVariant
-                )
+                // v2.8：把原来常驻的 3 行灰字收进一个可展开的入口。
+                //
+                // 为什么改：那 3 行说明 + 下面那条 RSSHub 提示常驻在列表**上面**，
+                // 合计吃掉首屏近三分之一的高度，把「我的阅源」挤到屏幕下半部分 ——
+                // 想扫一眼自己订了什么源，得先划过一大段说明书。
+                //
+                // 现在默认只剩一行「怎么用？」，点开才铺全文：想读的人随时能读，
+                // 不想读的人第一眼看到的就是自己的订阅源。
+                Row(
+                    modifier = Modifier
+                        .clip(MaterialTheme.shapes.small)
+                        .clickable { helpOpen = !helpOpen }
+                        .padding(vertical = 3.dp, horizontal = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Filled.Info,
+                        contentDescription = null,
+                        tint = cs.onSurfaceVariant,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(Modifier.width(5.dp))
+                    Text(
+                        if (helpOpen) "收起说明" else "怎么用？",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = cs.onSurfaceVariant
+                    )
+                    Icon(
+                        if (helpOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                        contentDescription = null,
+                        tint = cs.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+                if (helpOpen) {
+                    Text(
+                        "「测试全部」只检查每个源还能不能连上、有多少篇文章，不会拉文章，所以几十个源也能一次跑完。" +
+                            "\n想单独看某一个源：点它右边的 ↻，它会检查 + 拉取新文章，结果就显示在那一行下面。" +
+                            "\n点整行可以改名称 / 地址 / 分类；关掉开关就暂时不刷新它（已抓到的文章仍然留着）。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = cs.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
                 // 测试结论一直留着，方便对照着下面的逐行结果看
                 if (testSummary.isNotBlank()) {
                     Spacer(Modifier.height(6.dp))
@@ -357,31 +402,29 @@ private fun MySourcesPane(
                 }
                 // v2.1：RSSHub 入口常驻在工具区 —— 微博 / 知乎 / B站 / 小红书这些
                 // 平台本身没有 RSS，很多人不知道还能订，所以别把它藏进二级菜单。
-                Spacer(Modifier.height(9.dp))
+                //
+                // v2.8：从两行压成一行。原来第二行「这些平台本身没有 RSS，走 RSSHub
+                // 就能和别的源放在同一个列表里读」是说服性文案，但标题已经把结论说完了
+                // （「把微博 / 知乎 / B站 也变成阅源」），留着只是重复占高度。
+                Spacer(Modifier.height(7.dp))
                 Surface(color = cs.primaryContainer, shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth()) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(MaterialTheme.shapes.small)
                             .clickable(onClick = onRssHub)
-                            .padding(horizontal = 11.dp, vertical = 9.dp),
+                            .padding(horizontal = 11.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Filled.Hub, contentDescription = null, tint = cs.onPrimaryContainer, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Filled.Hub, contentDescription = null, tint = cs.onPrimaryContainer, modifier = Modifier.size(15.dp))
                         Spacer(Modifier.width(8.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "RSSHub：把微博 / 知乎 / B站 也变成阅源",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = cs.onPrimaryContainer
-                            )
-                            Text(
-                                "这些平台本身没有 RSS，走 RSSHub 就能和别的源放在同一个列表里读",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = cs.onPrimaryContainer.copy(alpha = 0.85f)
-                            )
-                        }
+                        Text(
+                            "RSSHub：把微博 / 知乎 / B站 也变成阅源",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = cs.onPrimaryContainer,
+                            modifier = Modifier.weight(1f)
+                        )
                         Text("去添加", style = MaterialTheme.typography.labelSmall, color = cs.onPrimaryContainer)
                     }
                 }
@@ -415,10 +458,20 @@ private fun MySourcesPane(
                             modifier = Modifier.size(18.dp)
                         )
                     }
+                    // v2.8：开关两侧各留 4dp。
+                    // 原来它和左右两个图标按钮是**贴着**的，三个控件糊成一块；
+                    // 而开关本身是一大块实心主色，视觉上把两侧细线条的图标压没了 ——
+                    // 拉开一点，它们才读得出是三个彼此独立的操作。
+                    Spacer(Modifier.width(4.dp))
                     Switch(checked = src.enabled, onCheckedChange = { onToggle(src.id, it) })
+                    Spacer(Modifier.width(4.dp))
                     IconButton(onClick = { onDelete(src) }, modifier = Modifier.size(36.dp)) {
                         Icon(
-                            Icons.Filled.Delete,
+                            // v2.8：实心垃圾桶换成描边。
+                            // 实心版是这个列表里除开关之外最重的一块墨，而「删除」既低频、
+                            // 又有确认弹窗兜底，不该抢走整行的注意力。
+                            // 图标语言统一成：**实心 = 状态/强调，描边 = 默认**。
+                            Icons.Outlined.DeleteOutline,
                             contentDescription = "删除",
                             tint = cs.onSurfaceVariant,
                             modifier = Modifier.size(18.dp)

@@ -37,20 +37,22 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.automirrored.filled.Toc
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.outlined.Notes
+import androidx.compose.material.icons.automirrored.outlined.Toc
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.FormatSize
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Bookmark
+import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -70,6 +72,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -77,6 +80,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -127,6 +131,29 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 private const val TOP_BAR_HEIGHT = 56
+
+/**
+ * 详情页顶栏图标之间的**分组细线**（v2.8）。
+ *
+ * ## 为什么光靠「拉开间距」分不出组
+ * 顶栏图标按钮是 38dp 见方，图标本体 24dp —— 相邻两枚之间**本来就有 14dp 空隙**。
+ * 所以再加 6dp / 8dp 的间距，肉眼根本分不出来。要让人看见「这里断开」，
+ * 只能画一条看得见的线。
+ *
+ * ## 为什么和首页那条不是同一个组件
+ * 这一页整块用的是 [ReaderPalette]（阅读配色，会跟着「米黄纸感 / 墨夜」变），
+ * 不是 `MaterialTheme.colorScheme`。要是图省事复用首页那个用 colorScheme 画的组件，
+ * 浅色主题下看不出问题，一切到米黄纸感就会变成一条和纸色不搭的青灰线。
+ */
+@Composable
+private fun ReaderTopBarDivider(inkVariant: Color) {
+    Box(
+        modifier = Modifier
+            .padding(horizontal = 3.dp)
+            .size(width = 1.dp, height = 16.dp)
+            .background(inkVariant.copy(alpha = 0.3f))
+    )
+}
 
 private fun shareArticle(context: Context, link: String, title: String) {
     val intent = Intent(Intent.ACTION_SEND).apply {
@@ -385,7 +412,7 @@ fun DetailScreen(
                     modifier = Modifier.size(38.dp)
                 ) {
                     Icon(
-                        Icons.AutoMirrored.Filled.Toc,
+                        Icons.AutoMirrored.Outlined.Toc,
                         contentDescription = "文章大纲",
                         tint = if (showToc) MaterialTheme.colorScheme.primary else palette.inkVariant
                     )
@@ -401,7 +428,7 @@ fun DetailScreen(
                         modifier = Modifier.size(38.dp)
                     ) {
                         Icon(
-                            Icons.AutoMirrored.Filled.Notes,
+                            Icons.AutoMirrored.Outlined.Notes,
                             contentDescription = "摘录与笔记",
                             tint = if (showNotes) MaterialTheme.colorScheme.primary else palette.inkVariant
                         )
@@ -421,6 +448,13 @@ fun DetailScreen(
                         }
                     }
                 }
+
+                // v2.8：顶栏这 6 枚图标按语义切成三组 ——
+                //   ① 怎么读（大纲 / 笔记面板）
+                //   ② 对这篇做什么（朗读 / 收藏）
+                //   ③ 怎么显示与带走（字号 / 分享）
+                // 分组只靠这条细线，不动任何一枚的位置和点按区。
+                ReaderTopBarDivider(palette.inkVariant)
 
                 // 暂停 / 继续。只在「正在念的就是本篇」时出现。
                 // TTS 引擎没有 pause API，这里是 stop + 记住片段位置 + 重发剩余片段凑出来的。
@@ -462,7 +496,9 @@ fun DetailScreen(
                     }
                 }, modifier = Modifier.size(38.dp)) {
                     Icon(
-                        if (playingHere) Icons.Filled.Stop else Icons.AutoMirrored.Filled.VolumeUp,
+                        // 朗读 / 停止是**状态**图标：正在念的时候是实心 + 主色，
+                        // 所以它保留实心（和收藏一致）。没在念时用描边的喇叭。
+                        if (playingHere) Icons.Filled.Stop else Icons.AutoMirrored.Outlined.VolumeUp,
                         contentDescription = if (playingHere) "停止朗读" else "朗读文章",
                         tint = if (playingHere) MaterialTheme.colorScheme.primary else palette.inkVariant
                     )
@@ -478,9 +514,15 @@ fun DetailScreen(
                         tint = if (currentArticle?.isBookmarked == true) MaterialTheme.colorScheme.tertiary else palette.inkVariant
                     )
                 }
+
+                // v2.8：分组线 2 —— 左边是「对这篇做什么」，右边是「怎么显示 / 怎么带走」
+                ReaderTopBarDivider(palette.inkVariant)
+
                 IconButton(onClick = { showTypePanel = !showTypePanel }, modifier = Modifier.size(38.dp)) {
                     Icon(
-                        Icons.Filled.FormatSize,
+                        // 描边版：这一排里「实心」留给有状态的东西（收藏、正在朗读），
+                        // 字号面板本身没有状态可言，实心的 TT 只会平白加重一排的墨量。
+                        Icons.Outlined.FormatSize,
                         contentDescription = "阅读排版",
                         tint = if (showTypePanel) MaterialTheme.colorScheme.primary else palette.inkVariant
                     )
@@ -489,7 +531,7 @@ fun DetailScreen(
                     onClick = { currentArticle?.let { shareArticle(context, it.link, it.title) } },
                     modifier = Modifier.size(38.dp)
                 ) {
-                    Icon(Icons.Filled.Share, contentDescription = "分享", tint = palette.inkVariant)
+                    Icon(Icons.Outlined.Share, contentDescription = "分享", tint = palette.inkVariant)
                 }
             }
         }
@@ -998,6 +1040,9 @@ private fun DetailPage(
             // ② clickable 只吃「点」，拖动照旧交给外层 verticalScroll，正文不会滑不动。
             val quoteInteraction = remember { MutableInteractionSource() }
 
+            // v2.8：正文上方那段操作提示的展开状态。
+            var hintOpen by rememberSaveable { mutableStateOf(false) }
+
             Text(
                 a.title,
                 style = MaterialTheme.typography.titleLarge.copy(fontSize = 23.sp, lineHeight = 32.sp),
@@ -1018,15 +1063,52 @@ private fun DetailPage(
                 color = palette.inkVariant
             )
             Spacer(Modifier.height(6.dp))
-            Text(
-                buildString {
-                    append("字号 ${ReaderSizeLabels.getOrElse(sizeIndex) { "标准" }} · 双指捏合可调 · 图片点按可放大")
-                    append("\n长按任意一段可摘录 / 写笔记")
-                    if (hasSiblings) append("\n左右滑动切换上一篇 / 下一篇")
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = palette.inkVariant.copy(alpha = 0.75f)
-            )
+            // v2.8：三行操作提示收成一个可展开的入口。
+            //
+            // 为什么改：这三行是**纯教学文案**，却常驻在正文正上方 —— 也就是整个页面
+            // 最贵的一块位置。每翻一篇都要先重看一遍「长按任意一段可摘录」，
+            // 而真正要读的正文被硬生生推下去两行。
+            //
+            // 现在默认只留一行：「字号 标准 › 手势与技巧」。
+            // 当前字号是**活状态**（读者得知道自己现在是第几档），必须一直看得见；
+            // 手势提示属于「读一次就够」，点开才铺全文。
+            Row(
+                modifier = Modifier
+                    .clip(MaterialTheme.shapes.small)
+                    .clickable { hintOpen = !hintOpen }
+                    .padding(vertical = 3.dp, horizontal = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "字号 ${ReaderSizeLabels.getOrElse(sizeIndex) { "标准" }}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.inkVariant.copy(alpha = 0.75f)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (hintOpen) "收起手势说明" else "手势与技巧",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.inkVariant.copy(alpha = 0.75f)
+                )
+                Icon(
+                    if (hintOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = null,
+                    tint = palette.inkVariant.copy(alpha = 0.75f),
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+            if (hintOpen) {
+                Text(
+                    buildString {
+                        append("双指捏合可调字号 · 图片点按可放大")
+                        append("\n长按任意一段可摘录 / 写笔记")
+                        if (hasSiblings) append("\n左右滑动切换上一篇 / 下一篇")
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.inkVariant.copy(alpha = 0.75f),
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
             Spacer(Modifier.height(16.dp))
 
             // 正在联网抽取正文全文
@@ -1309,7 +1391,7 @@ private fun TocPanel(
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    Icons.AutoMirrored.Filled.Toc,
+                    Icons.AutoMirrored.Outlined.Toc,
                     contentDescription = null,
                     tint = cs.primary,
                     modifier = Modifier.size(17.dp)
@@ -1406,7 +1488,7 @@ private fun NotesPanel(
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    Icons.AutoMirrored.Filled.Notes,
+                    Icons.AutoMirrored.Outlined.Notes,
                     contentDescription = null,
                     tint = cs.primary,
                     modifier = Modifier.size(17.dp)

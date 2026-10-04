@@ -43,11 +43,10 @@ import androidx.compose.material.icons.filled.MarkEmailUnread
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RssFeed
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.automirrored.filled.Label
-import androidx.compose.material.icons.automirrored.filled.ViewList
-import androidx.compose.material.icons.filled.ViewAgenda
-import androidx.compose.material.icons.filled.ViewStream
+import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material.icons.outlined.FilterAlt
+import androidx.compose.material.icons.outlined.ViewAgenda
+import androidx.compose.material.icons.outlined.ViewStream
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -320,6 +319,13 @@ fun HomeScreen(
                         onClick = onOpenSearch
                     )
 
+                    // v2.8：顶栏 6 枚图标按语义切成三组 ——
+                    //   ① 找内容：搜索
+                    //   ② 改列表状态：批量管理 / 仅看未读 / 全部已读 / 布局
+                    //   ③ 更新：刷新
+                    // 分组只靠这条细线，不动任何一枚图标的位置和点按区。
+                    TopBarGroupDivider()
+
                     // 批量管理入口
                     TopBarIcon(
                         icon = Icons.Filled.Checklist,
@@ -368,6 +374,7 @@ fun HomeScreen(
                         )
                     }
                     if (showRefreshBtn) {
+                        TopBarGroupDivider()
                         TopBarIcon(
                             icon = Icons.Filled.Refresh,
                             contentDescription = "刷新",
@@ -882,15 +889,23 @@ private fun HomeKeywordRow(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            // ⚠️ 必须用 AutoMirrored 版：普通的 Icons.Filled.Label 已标废弃，
-            // 编译会吐一条 w:（本项目要求零警告）。RTL 语言下镜像才对。
-            Icons.AutoMirrored.Filled.Label,
-            contentDescription = "关键词",
-            tint = cs.onSurfaceVariant,
-            modifier = Modifier.size(15.dp)
+        // v2.8：这里原来是一枚**孤零零的标签图标**（Icons.AutoMirrored.Filled.Label）。
+        //
+        // 为什么必须换掉：作者本意是给这一行做个「关键词」标识，靠图标把三排
+        // 长得一样的胶囊区分开。但漏了一种状态 —— **没选关键词时**，
+        // 下面那颗「全部关键词」胶囊是不渲染的（见下面 selected.isNotBlank()），
+        // 于是图标左边没有邻居、右边直接是第一个关键词胶囊，
+        // 在 15dp 的尺寸下它就是一个**来路不明的三角**，谁也猜不出是什么。
+        //
+        // 换成文字「关键词」：成本是横向多占约 19dp（原来的图标 + 间距是 22dp），
+        // 换来的是这一行自己说清楚自己是什么 —— 也比一个图标更扛得住「三排胶囊
+        // 长得一样」这个问题。锚点从「图形」换成「词」，就不再依赖任何相邻元素。
+        Text(
+            "关键词",
+            style = MaterialTheme.typography.labelSmall,
+            color = cs.onSurfaceVariant
         )
-        Spacer(Modifier.width(7.dp))
+        Spacer(Modifier.width(8.dp))
         Row(
             modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -982,8 +997,34 @@ private fun DayHeader(
     }
 }
 
+/**
+ * 顶栏图标之间的**分组细线**（v2.8）。
+ *
+ * ## 为什么非得画一条线，光靠「拉开间距」不行
+ * 图标槽位是 [TOP_ICON_SLOT] 36dp、图标本体 [TOP_ICON_SIZE] 22dp，
+ * 也就是相邻两枚之间**本来就有 14dp 空隙**。
+ * 所以再怎么加 6dp、8dp 的间距也分不出组 —— 14dp 和 20dp 肉眼根本没区别。
+ * 要让人一眼看出「这几枚是一组」，只能给一条看得见的线。
+ *
+ * 配色用 `outlineVariant` 再压到 0.7：只做「这里断开」的暗示，
+ * 亮度必须低于任何一枚图标，否则它会变成整条顶栏最抢眼的东西。
+ */
+@Composable
+private fun TopBarGroupDivider() {
+    Box(
+        modifier = Modifier
+            .padding(horizontal = 3.dp)
+            .size(width = 1.dp, height = 16.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+    )
+}
+
 private fun ArticleListMode.icon(): ImageVector = when (this) {
-    ArticleListMode.Compact -> Icons.AutoMirrored.Filled.ViewList
-    ArticleListMode.Card -> Icons.Filled.ViewAgenda
-    ArticleListMode.Magazine -> Icons.Filled.ViewStream
+    // v2.8：三个布局图标统一换成**描边**版。
+    // 原来 Card 用的是实心 ViewAgenda —— 在一排描边图标里它是唯一一块实心墨，
+    // 看着像「被选中了」，其实只是「当前是卡片布局」。形状本身已经能区分三种模式，
+    // 不需要再用实心去加重。图标语言统一成：**实心 = 状态/强调，描边 = 默认**。
+    ArticleListMode.Compact -> Icons.AutoMirrored.Outlined.ViewList
+    ArticleListMode.Card -> Icons.Outlined.ViewAgenda
+    ArticleListMode.Magazine -> Icons.Outlined.ViewStream
 }
