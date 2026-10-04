@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # 阅闻 · 解析层离线测试（不需要安卓设备 / 模拟器）
 #
-# 为什么需要它：本机没有 AVD 也没有真机，Compose 界面没法自动化跑；
-# 但「RSS 解析 / OPML 导入导出 / 格式识别」这几块是纯 JVM 逻辑，
+# 为什么需要它：Compose 界面没法在无设备的机器上自动化跑；
+# 但「RSS 解析 / OPML 导入导出 / 配色对比度 / 搜索转义」这几块是纯 JVM 逻辑，
 # 抽出来用独立的 Kotlin 编译器跑一遍，几秒钟就能发现回归。
 #
 # 用法：
@@ -10,18 +10,60 @@
 #   bash tools/jvmtest/run.sh verbose    # 打印每条的详细信息
 #
 # 依赖：本机跑过一次 gradle 构建（这样 ~/.gradle 缓存里才有下面这些 jar）。
+#
+# 支持的平台：macOS / Linux / Windows(Git Bash、MSYS2、Cygwin) 三端通用。
+# 原来的版本写死了 `java.exe`、用 `;` 当 classpath 分隔符、
+#   默认 JDK 路径是 `C:/android-env/jdk` —— 换到 macOS 上直接报
+#   `.../bin/java.exe: No such file or directory`，287 条断言一条都跑不了。
+#   现在把「平台差异」收敛到下面三个地方，其余逻辑三端共用。
 
 set -uo pipefail
 
-JDK="${JAVA_HOME:-C:/android-env/jdk}"
-JAVA="$JDK/bin/java.exe"
+# ==================== 平台差异（唯一定义处）====================
 
-# ⚠️ 必须把路径转成 Windows 形式（C:/...）：
-#    Git Bash 的 pwd 给的是 /c/Users/...，而 Windows 版 java.exe 不认这种写法，
-#    拼进 -cp 之后会直接报「找不到主类」。cygpath -m 负责转换。
+case "$(uname -s 2>/dev/null || echo unknown)" in
+  MINGW*|MSYS*|CYGWIN*) IS_WIN=1 ;;
+  *)                    IS_WIN=0 ;;
+esac
+
+# classpath 分隔符：Windows 用 `;`，类 Unix 用 `:`。
+# 用错的表现是「找不到主类」—— 因为整条 cp 会被当成一个路径。
+if [ "$IS_WIN" = 1 ]; then SEP=";"; else SEP=":"; fi
+
+# Git Bash 的 pwd 给的是 /c/Users/...，而 Windows 版 java.exe 不认这种写法，
+# 拼进 -cp 之后会直接报「找不到主类」。cygpath -m 负责转成 C:/Users/...。
+# 类 Unix 上原样返回。
 winpath() {
-  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi
+  if [ "$IS_WIN" = 1 ] && command -v cygpath >/dev/null 2>&1; then
+    cygpath -m "$1"
+  else
+    printf '%s' "$1"
+  fi
 }
+
+# 定位 java。顺序：$JAVA_HOME → PATH 里的 java → Windows 上的历史默认路径。
+# 不再硬编码 java.exe：Windows 上带 .exe，类 Unix 上不带，这里自己判。
+JAVA=""
+if [ -n "${JAVA_HOME:-}" ]; then
+  if [ -x "$JAVA_HOME/bin/java" ]; then
+    JAVA="$JAVA_HOME/bin/java"
+  elif [ -x "$JAVA_HOME/bin/java.exe" ]; then
+    JAVA="$JAVA_HOME/bin/java.exe"
+  fi
+fi
+if [ -z "$JAVA" ]; then
+  JAVA="$(command -v java 2>/dev/null || true)"
+fi
+if [ -z "$JAVA" ] && [ -x "C:/android-env/jdk/bin/java.exe" ]; then
+  JAVA="C:/android-env/jdk/bin/java.exe"
+fi
+if [ -z "$JAVA" ]; then
+  echo "[x] 找不到 java。请设置 JAVA_HOME，或把 java 放进 PATH。" >&2
+  echo "    macOS 例：export JAVA_HOME=\$(/usr/libexec/java_home -v 17)" >&2
+  exit 1
+fi
+
+# ==================== 路径 ====================
 
 HERE="$(winpath "$(cd "$(dirname "$0")" && pwd)")"
 ROOT="$(winpath "$(cd "$HERE/../.." && pwd)")"
@@ -29,7 +71,9 @@ SRC="$ROOT/app/src/main/java/com/example/yuewen"
 OUT="$HERE/.out"
 
 GRADLE_CACHE="${GRADLE_CACHE:-$(winpath "$HOME")/.gradle/caches/modules-2/files-2.1}"
-[ -d "$GRADLE_CACHE" ] || GRADLE_CACHE="C:/Users/Administrator/.gradle/caches/modules-2/files-2.1"
+if [ ! -d "$GRADLE_CACHE" ] && [ -d "C:/Users/Administrator/.gradle/caches/modules-2/files-2.1" ]; then
+  GRADLE_CACHE="C:/Users/Administrator/.gradle/caches/modules-2/files-2.1"
+fi
 
 # 按通配符在缓存里定位 jar（用 bash 自带的 glob，不扫盘）。
 # gradle 缓存结构固定为 group/artifact/version/hash/file.jar
@@ -70,7 +114,10 @@ JSOUP=$(need "$GRADLE_CACHE"/org.jsoup/jsoup/1.16.2/*/jsoup-1.16.2.jar) || exit 
 # 于是「备份 / 恢复」这条链路也能进离线回归（room-common 只是个注解 jar，没有 Android 依赖）。
 ROOM=$(need "$GRADLE_CACHE"/androidx.room/room-common/2.6.1/*/room-common-2.6.1.jar) || exit 1
 
-COMPILER_CP="$KC;$STDLIB;$REFLECT;$SCRIPT;$DAEMON;$TROVE;$ANN"
+# 编译器自己的 classpath（kotlin 编译器那一串）
+COMPILER_CP="$KC$SEP$STDLIB$SEP$REFLECT$SEP$SCRIPT$SEP$DAEMON$SEP$TROVE$SEP$ANN"
+# 被测代码的 classpath（不含纯 Kotlin 编译器组件）
+RUNTIME_CP="$STDLIB$SEP$KXML2$SEP$JSOUP$SEP$ROOM"
 
 # 被测源码（纯 JVM，不碰 android.*）
 # ⚠️ 加新文件时要留意它的依赖：ReadStats.kt 引用了 SourceCount，
@@ -112,15 +159,20 @@ SOURCES=(
   "$HERE/TestMain.kt"
 )
 
+echo "== 环境 =="
+echo "   java   : $JAVA"
+echo "   平台   : $( [ "$IS_WIN" = 1 ] && echo Windows || echo 'Unix(macOS/Linux)' )"
+echo "   缓存   : $GRADLE_CACHE"
+
 echo "== 编译 =="
 rm -rf "$OUT" && mkdir -p "$OUT"
 "$JAVA" -cp "$COMPILER_CP" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler \
-  -no-stdlib -nowarn -cp "$STDLIB;$KXML2;$JSOUP;$ROOM" -d "$OUT" "${SOURCES[@]}" || exit 1
+  -no-stdlib -nowarn -cp "$RUNTIME_CP" -d "$OUT" "${SOURCES[@]}" || exit 1
 
 echo "== 运行 =="
 if [ "${1:-}" = "verbose" ]; then
-  "$JAVA" -Dfile.encoding=UTF-8 -cp "$OUT;$STDLIB;$KXML2;$JSOUP;$ROOM" TestMainKt
+  "$JAVA" -Dfile.encoding=UTF-8 -cp "$OUT$SEP$RUNTIME_CP" TestMainKt
 else
-  "$JAVA" -Dfile.encoding=UTF-8 -cp "$OUT;$STDLIB;$KXML2;$JSOUP;$ROOM" TestMainKt \
+  "$JAVA" -Dfile.encoding=UTF-8 -cp "$OUT$SEP$RUNTIME_CP" TestMainKt \
     | grep -E '^\[(PASS|FAIL)\]|^通过|^===='
 fi

@@ -70,6 +70,32 @@ android {
     }
 }
 
+/**
+ * 产物统一命名成 `app-v<版本号>.apk`，不再用默认的 `app-debug` / `app-release`。
+ *
+ * 为什么用 `androidComponents.onVariants` 而不是老的 `android.applicationVariants.all`：
+ * 后者在 AGP 8.x 已进入弃用通道，用它会往构建输出里塞一条 deprecation 警告，
+ * 而本项目要求「零编译警告」。
+ *
+ * ⚠️ 为什么必须强转成 `VariantOutputImpl`：
+ * `com.android.build.api.variant.VariantOutput` 这个**公开接口只暴露了 versionName**，
+ * 没有改名的方法；真正带 `outputFileName` 的是 impl 包里的实现类。
+ *
+ * 版本号取自「当前 variant 自己」而不是写死 defaultConfig —— 这样将来给 release
+ * 做 versionName 后缀（比如 `2.7.4` + `-beta`）时，产物名会跟着自动变。
+ *
+ * 目录不变：debug 仍在 `app/build/outputs/apk/debug/`，
+ * release 在 `.../apk/release/`，两者同名但不同目录，不会互相覆盖。
+ */
+androidComponents {
+    onVariants { variant ->
+        variant.outputs.forEach { output ->
+            val impl = output as? com.android.build.api.variant.impl.VariantOutputImpl ?: return@forEach
+            impl.outputFileName.set(impl.versionName.map { "app-v$it.apk" })
+        }
+    }
+}
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
     implementation(composeBom)

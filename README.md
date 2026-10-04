@@ -141,14 +141,22 @@ cd yuewen
 echo "sdk.dir=/path/to/Android/Sdk" > local.properties
 
 # 3. 构建
-./gradlew assembleDebug          # 调试包：app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleDebug          # 调试包：app/build/outputs/apk/debug/app-v2.7.4.apk
 ./gradlew assembleRelease        # 发布包（开了 R8，体积小很多、也更流畅）
 
 # 4. 装到设备上
 ./gradlew installDebug
 ```
 
+> **产物命名**：apk 统一叫 `app-v<版本号>.apk`（版本号取自 `app/build.gradle.kts`
+> 的 `versionName`），不再用默认的 `app-debug` / `app-release`。
+> debug 与 release 同名但分处 `apk/debug/` 和 `apk/release/` 两个目录，不会互相覆盖。
+
 Windows 上用 `gradlew.bat` 代替 `./gradlew`。
+
+> **macOS / Linux 用户先给脚本补可执行位**：如果 clone 下来跑 `./gradlew` 报
+> `permission denied`，是仓库里这个文件的权限位丢了（历史上从 Windows 提交过）。
+> 一条命令修好：`chmod +x gradlew tools/jvmtest/run.sh`。
 
 > **关于 Maven 镜像**：`settings.gradle.kts` 里把腾讯云镜像放在了第一位，
 > 这是为了让国内网络能正常拉依赖。国外网络如果觉得慢，把那一行删掉即可，
@@ -165,10 +173,12 @@ Windows 上用 `gradlew.bat` 代替 `./gradlew`。
 这个项目最大的工程特点是：**核心逻辑全部抽成了纯 JVM 代码，可以脱离 Android 设备测试**。
 
 ```bash
-cd NewsApp
+# 在仓库根目录执行（不是 NewsApp —— 那只是 Gradle 工程名，目录就叫 yuewen）
 bash tools/jvmtest/run.sh            # 只看 PASS/FAIL 摘要
 bash tools/jvmtest/run.sh verbose    # 打印每条的详细信息
 ```
+
+macOS / Linux / Windows(Git Bash) 都能跑；脚本自己判断平台，无需改配置。
 
 几秒钟出结果，当前 **287 条断言**。覆盖：
 
