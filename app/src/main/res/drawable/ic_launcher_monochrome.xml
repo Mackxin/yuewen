@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  阅闻 · 自适应图标「单色层」（Android 13+ 主题图标用）
+
+  系统会把这一层当成一张**遮罩**：只看 alpha，然后用自己的主题色去填。
+  所以这里画什么颜色无所谓（全白即可），**形状必须和 ic_launcher_foreground 完全一致**，
+  否则开了「主题图标」的用户会看到一个跟平时不一样的图形。
+
+  ⚠️ 改前景层时，这个文件的 pathData 要同步改 —— 这是本目录唯一需要手动对齐的地方。
+  刻意不做成引用（VectorDrawable 没有跨文件复用路径的机制），
+  两处重复但都写了注释，比抽一个不存在的公共资源更实在。
+
+  几何与前景层逐字对齐：圆心 (36,72)、外弧 r=38、内弧 r=20、圆点 r=7、描边 9。
+  主题图标下不显示背景层，所以这里只有弧线本身，没有底色。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:pathData="M36,34 A38,38 0 0 1 74,72"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+
+    <path
+        android:pathData="M36,52 A20,20 0 0 1 56,72"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+
+    <path
+        android:pathData="M29,72 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0"
+        android:fillColor="#FFFFFF" />
+
+</vector>

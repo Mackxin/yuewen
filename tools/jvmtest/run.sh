@@ -16,6 +16,8 @@
 #   默认 JDK 路径是 `C:/android-env/jdk` —— 换到 macOS 上直接报
 #   `.../bin/java.exe: No such file or directory`，287 条断言一条都跑不了。
 #   现在把「平台差异」收敛到下面三个地方，其余逻辑三端共用。
+#
+# 对 JDK 版本有要求（17 ~ 21），详见下面「定位 java」那一段的注释。
 
 set -uo pipefail
 
@@ -41,25 +43,90 @@ winpath() {
   fi
 }
 
-# 定位 java。顺序：$JAVA_HOME → PATH 里的 java → Windows 上的历史默认路径。
-# 不再硬编码 java.exe：Windows 上带 .exe，类 Unix 上不带，这里自己判。
+# ==================== 定位 java ====================
+#
+# ⚠️ 这里**不能**简单地「$JAVA_HOME 优先，否则用 PATH 上的那个」。
+# 本机（macOS + Homebrew）就踩过这个坑：`JAVA_HOME` 指向 `/opt/homebrew/opt/openjdk`，
+# 那是 **JDK 26**；而 kotlin-compiler-embeddable 1.9.24 解析不了 `26.0.1` 这种版本串，
+# 直接抛 `java.lang.IllegalArgumentException: 26.0.1`，300 条断言一条都跑不起来 ——
+# 报错还长得像编译器崩了，完全看不出「是 JDK 太新」。
+#
+# 所以改成**按版本区间挑**：在候选列表里找第一个主版本落在 [JAVA_MIN, JAVA_MAX] 的。
+# 区间上限取 21 是因为 Kotlin 1.9.x 的官方支持上限就是 21；再新就要连带升 Kotlin，
+# 那是另一件事，不该由这个测试脚本偷偷决定。
+
+JAVA_MIN=17
+JAVA_MAX=21
+
+# 取出 `java` 的主版本号（17 / 21 / 26 ...）。取不到就返回 1。
+# 注意 `java -version` 是往 **stderr** 打的，所以必须 2>&1。
+# 另外 JDK 8 那种 `1.8.0_xxx` 要取第二段。
+java_major() {
+  local raw
+  raw="$("$1" -version 2>&1 | head -n 1 | sed -n 's/.*version "\([0-9][0-9.]*\).*/\1/p')"
+  [ -z "$raw" ] && return 1
+  case "$raw" in
+    1.*) printf '%s' "$(printf '%s' "$raw" | cut -d. -f2)" ;;  # 1.8.0_381 → 8
+    *)   printf '%s' "$(printf '%s' "$raw" | cut -d. -f1)" ;;  # 17.0.19  → 17
+  esac
+}
+
+CANDIDATES=()
+add_cand() { [ -n "${1:-}" ] && CANDIDATES+=("$1"); }
+
+# 1) 显式设置了 JAVA_HOME 就先用它（但下面还要过一遍版本检查）
+[ -n "${JAVA_HOME:-}" ] && { add_cand "$JAVA_HOME/bin/java"; add_cand "$JAVA_HOME/bin/java.exe"; }
+
+# 2) macOS：系统自带的 java_home 能定位到 /Library/Java/JavaVirtualMachines 里的 JDK。
+#    本机 brew 装的 openjdk 没往那儿软链，所以这一步通常是空的 —— 不打紧，下面还有。
+if [ "$IS_WIN" = 0 ] && [ -x /usr/libexec/java_home ]; then
+  for v in 17 21 20 19 18; do
+    h="$(/usr/libexec/java_home -v "$v" 2>/dev/null || true)"
+    add_cand "$h/bin/java"
+  done
+fi
+
+# 3) Homebrew / Linux 发行版的常见安装位置，按「离 17 最近」的顺序试
+for v in 17 21 20 19 18; do
+  add_cand "/opt/homebrew/opt/openjdk@$v/libexec/openjdk.jdk/Contents/Home/bin/java"
+  add_cand "/usr/local/opt/openjdk@$v/libexec/openjdk.jdk/Contents/Home/bin/java"
+  add_cand "/opt/homebrew/opt/openjdk@$v/bin/java"
+  add_cand "/usr/local/opt/openjdk@$v/bin/java"
+  add_cand "/usr/lib/jvm/java-$v-openjdk/bin/java"
+  add_cand "/usr/lib/jvm/java-$v-openjdk-amd64/bin/java"
+  add_cand "/Library/Java/JavaVirtualMachines/temurin-$v.jdk/Contents/Home/bin/java"
+done
+
+# 4) Windows 上的历史默认路径（原来的脚本把它当唯一解，现在只当兜底）
+add_cand "C:/android-env/jdk/bin/java.exe"
+
+# 5) 最后的兜底：PATH 上的那个（/usr/bin/java 那条 macOS 存根会因取不到版本被自动跳过）
+add_cand "$(command -v java 2>/dev/null || true)"
+
 JAVA=""
-if [ -n "${JAVA_HOME:-}" ]; then
-  if [ -x "$JAVA_HOME/bin/java" ]; then
-    JAVA="$JAVA_HOME/bin/java"
-  elif [ -x "$JAVA_HOME/bin/java.exe" ]; then
-    JAVA="$JAVA_HOME/bin/java.exe"
+JAVA_VER=""
+SKIPPED=""
+for c in "${CANDIDATES[@]}"; do
+  [ -x "$c" ] || continue
+  m="$(java_major "$c" || true)"
+  [ -z "$m" ] && continue
+  if [ "$m" -ge "$JAVA_MIN" ] && [ "$m" -le "$JAVA_MAX" ]; then
+    JAVA="$c"; JAVA_VER="$m"
+    break
   fi
-fi
+  case " $SKIPPED " in *" $m "*) ;; *) SKIPPED="$SKIPPED $m" ;; esac
+done
+
 if [ -z "$JAVA" ]; then
-  JAVA="$(command -v java 2>/dev/null || true)"
-fi
-if [ -z "$JAVA" ] && [ -x "C:/android-env/jdk/bin/java.exe" ]; then
-  JAVA="C:/android-env/jdk/bin/java.exe"
-fi
-if [ -z "$JAVA" ]; then
-  echo "[x] 找不到 java。请设置 JAVA_HOME，或把 java 放进 PATH。" >&2
-  echo "    macOS 例：export JAVA_HOME=\$(/usr/libexec/java_home -v 17)" >&2
+  echo "[x] 没找到可用的 JDK $JAVA_MIN~$JAVA_MAX。" >&2
+  if [ -n "$SKIPPED" ]; then
+    echo "    机器上有这些版本，但都超出区间：$SKIPPED" >&2
+    echo "    （Kotlin 1.9.24 的编译器解析不了 JDK 22+ 的版本串，会直接崩）" >&2
+  fi
+  echo "    装一个 17 或 21 即可，然后显式喂给它：" >&2
+  echo "      macOS : brew install openjdk@17" >&2
+  echo "              JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home bash tools/jvmtest/run.sh" >&2
+  echo "      Linux : JAVA_HOME=/usr/lib/jvm/java-17-openjdk bash tools/jvmtest/run.sh" >&2
   exit 1
 fi
 
@@ -160,7 +227,10 @@ SOURCES=(
 )
 
 echo "== 环境 =="
-echo "   java   : $JAVA"
+echo "   java   : $JAVA  (JDK $JAVA_VER)"
+if [ -n "${JAVA_HOME:-}" ] && [ "$JAVA" != "$JAVA_HOME/bin/java" ] && [ "$JAVA" != "$JAVA_HOME/bin/java.exe" ]; then
+  echo "   ⚠️ JAVA_HOME 指向的不是这个 JDK，本脚本按版本区间自己挑了一个"
+fi
 echo "   平台   : $( [ "$IS_WIN" = 1 ] && echo Windows || echo 'Unix(macOS/Linux)' )"
 echo "   缓存   : $GRADLE_CACHE"
 

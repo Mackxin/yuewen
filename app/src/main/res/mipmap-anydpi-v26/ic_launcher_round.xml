@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  圆形图标变体。内容与 ic_launcher.xml 完全一致 ——
+  自适应图标本来就由系统按形状裁，所以「圆角」和「圆形」用同一套图层。
+
+  既然一样，为什么还要单独一份？
+  因为部分启动器 / 系统（尤其国内 ROM）会去读 `android:roundIcon`，
+  这个属性没声明的话那边会退回用普通图标再自己裁一次，边缘容易出锯齿。
+  两份文件几行，换来的是一致性。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+</adaptive-icon>

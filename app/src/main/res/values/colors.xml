@@ -9,4 +9,16 @@
       结果顶部状态栏和底部导航栏各露出一条「粉色」色带（用户反馈的就是它）。
     -->
     <color name="yuewen_window_bg">#F5F8F6</color>
+
+    <!--
+      应用图标底色（v2.7.5）。
+
+      ⚠️ 这个值必须等于 Compose 里的品牌主色 `L_Primary`（ui/theme/Color.kt）。
+      之前图标用的是 #1D9E75 —— 和主色 #0E9F76 只差一点点，肉眼看不出来，
+      但它是**另一个色号**：图标和 App 内的主色其实是两种绿。
+      色号对不上的地方最难发现，也最容易在以后换配色时漏改，所以这里统一。
+
+      图标底色不跟随深色模式（始终是这块绿），所以 values-night 里不需要再写一份。
+    -->
+    <color name="ic_launcher_background">#0E9F76</color>
 </resources>

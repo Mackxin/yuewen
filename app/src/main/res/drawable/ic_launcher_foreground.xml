@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  阅闻 · 自适应图标「前景层」（v2.7.5）
+
+  ## 为什么是这个形状
+  一个「声波弧线」：左下角一个圆点，向右上甩出两道 90° 圆弧。
+  这是订阅/广播的通用视觉语汇 —— 用户在 48dp 的桌面上扫一眼就知道是「订内容的东西」，
+  比画一本书或几行文字的辨识度高得多（那两种在这么小的尺寸下会糊成一团）。
+
+  同时它是「阅闻」两个字的一语双关：弧线既是「闻」（声波 / 朗读），
+  三元素的排布又天然构成阅读器的经典符号。
+
+  ## 尺寸规矩（改这个文件前务必读）
+  自适应图标的每层画布都是 **108×108**，但系统会拿各种形状去裁它，
+  所以 **关键内容必须落在中心直径 66 的圆内**（即距中心 (54,54) 不超过 33）。
+
+  本例的最远点实测：
+  - 圆点最外沿：25.46 + 7 = 32.46
+  - 弧线端点含圆头笔帽：26.9 + 4.5 = 31.4
+  都 < 33，圆形 / 圆角方形 / 水滴形各种裁剪都不会切到图形本体。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 圆心 (36,72)：这是两道弧共同的圆心，也是圆点所在处。
+         所有坐标都相对它算，改半径时两个端点要跟着改，别只改一个。 -->
+
+    <!-- 外弧：半径 38，从正上方 (36,34) 顺时针扫到正右方 (74,72) -->
+    <path
+        android:pathData="M36,34 A38,38 0 0 1 74,72"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+
+    <!-- 内弧：半径 20，同样的角度区间 -->
+    <path
+        android:pathData="M36,52 A20,20 0 0 1 56,72"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+
+    <!-- 圆点：半径 7。
+         用两段半圆拼一个整圆（VectorDrawable 没有 <circle> 元素）。
+         笔帽设成 round 是为了弧线两端和圆点看起来是一套笔触。 -->
+    <path
+        android:pathData="M29,72 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0"
+        android:fillColor="#FFFFFF" />
+
+</vector>

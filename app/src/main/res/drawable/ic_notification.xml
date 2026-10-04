@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  阅闻 · 通知栏小图标（v2.7.5）
+
+  ## 为什么单独做一份，不能复用应用图标
+  通知栏小图标在 Android 上有个硬规矩：**系统只取它的 alpha 通道，再统一染色**
+  （浅色主题染深灰、深色主题染白）。所以它必须是一张「透明底 + 实心图形」的图。
+
+  以前 RefreshWorker 直接拿 `R.drawable.ic_launcher` 当它 ——
+  那是一张 108×108 的**整块绿色方块**，完全没有透明区域。
+  结果就是状态栏里出现一个**实心白方块**，看不出是什么，也很难看。
+
+  这里刻意**不写 android:tint**：染色是系统的事，资源自己再指定一遍只会让
+  以后开深色主题时多一层说不清的叠加。
+
+  ## 尺寸规矩
+  通知图标按 **24×24** 画，内容撑满中间 22×22：
+  下面图形实际范围 x 3.0~21.0、y 3.0~21.0，四边各留 3dp，正是这个惯例。
+
+  几何与应用图标同源（圆点 + 两道 90° 弧），但是按 24 的画布**重新配的比例**，
+  不是把 108 的图等比缩小 —— 直接缩会让线条细到看不清。
+  ⚠️ 圆点用 <path> 拼整圆，因为 VectorDrawable 没有 <circle> 元素。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- 圆心 (5.4,18.6)：两道弧共用，也是圆点所在处 -->
+    <path
+        android:pathData="M5.4,4.6 A14,14 0 0 1 19.4,18.6"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.3"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+
+    <path
+        android:pathData="M5.4,11.6 A7,7 0 0 1 12.4,18.6"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.3"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+
+    <path
+        android:pathData="M3,18.6 a2.4,2.4 0 1,0 4.8,0 a2.4,2.4 0 1,0 -4.8,0"
+        android:fillColor="#FFFFFF" />
+
+</vector>

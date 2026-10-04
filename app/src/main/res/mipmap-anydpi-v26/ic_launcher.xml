@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  阅闻 · 自适应图标（Android 8.0 / API 26 起）
+
+  ## 为什么必须建这个文件，而不是继续用一张 drawable
+  以前工程里只有 `res/drawable/ic_launcher.xml` —— 一张 108×108 的整块矢量。
+  minSdk 是 26，系统对「非自适应图标」只能走兼容逻辑：把它等比缩小、
+  塞进一个白底形状里。实机表现就是**图标比隔壁 App 小一圈、还多出一圈白边**。
+
+  自适应图标把图形拆成三层交给系统，由系统按当前启动器的形状去裁：
+  - background：铺满 108×108，随便裁都不会露白
+  - foreground：图形本体，画在中心安全区内（见 ic_launcher_foreground.xml）
+  - monochrome：Android 13+ 的「主题图标」，跟随系统壁纸取色
+
+  ## 只有 anydpi-v26 够吗
+  够 —— 本 App 的 minSdk 就是 26，不存在跑在 API 25 的设备，
+  所以不需要再放一堆 mipmap-mdpi/hdpi/xhdpi 的 PNG 兜底。
+  （将来若把 minSdk 降到 26 以下，必须补 PNG，否则老系统上图标会变空白。）
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+</adaptive-icon>

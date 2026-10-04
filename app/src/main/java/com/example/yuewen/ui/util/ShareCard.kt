@@ -26,7 +26,10 @@ object ShareCard {
     fun generate(context: Context, article: Article, footer: String = DEFAULT_FOOTER): Uri? {
         return try {
             val W = 1080
-            val accent = Color.parseColor("#1D9E75")
+            // v2.7.5：原来这里是 #1D9E75，和 Compose 版本里的品牌主色 L_Primary(#0E9F76)
+            // 是两个色号 —— 差得不多，肉眼看不出来，但分享卡片上的绿和 App 里的绿确实不是同一种。
+            // 统一到主色，也顺手和应用图标底色对齐（见 res/values/colors.xml）。
+            val accent = Color.parseColor("#0E9F76")
             val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 textSize = 66f
                 typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)

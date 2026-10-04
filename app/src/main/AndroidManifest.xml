@@ -27,7 +27,8 @@
     <application
         android:name=".YuewenApplication"
         android:allowBackup="true"
-        android:icon="@drawable/ic_launcher"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:networkSecurityConfig="@xml/network_security_config"
@@ -57,7 +58,8 @@
             android:targetActivity=".MainActivity"
             android:exported="true"
             android:enabled="true"
-            android:icon="@drawable/ic_launcher"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
             android:label="@string/icon_name_0"
             android:theme="@style/Theme.Yuewen">
             <intent-filter>
@@ -71,7 +73,8 @@
             android:targetActivity=".MainActivity"
             android:exported="true"
             android:enabled="false"
-            android:icon="@drawable/ic_launcher"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
             android:label="@string/icon_name_1"
             android:theme="@style/Theme.Yuewen">
             <intent-filter>
@@ -85,7 +88,8 @@
             android:targetActivity=".MainActivity"
             android:exported="true"
             android:enabled="false"
-            android:icon="@drawable/ic_launcher"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
             android:label="@string/icon_name_2"
             android:theme="@style/Theme.Yuewen">
             <intent-filter>
@@ -99,7 +103,8 @@
             android:targetActivity=".MainActivity"
             android:exported="true"
             android:enabled="false"
-            android:icon="@drawable/ic_launcher"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
             android:label="@string/icon_name_3"
             android:theme="@style/Theme.Yuewen">
             <intent-filter>
@@ -113,7 +118,8 @@
             android:targetActivity=".MainActivity"
             android:exported="true"
             android:enabled="false"
-            android:icon="@drawable/ic_launcher"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
             android:label="@string/icon_name_4"
             android:theme="@style/Theme.Yuewen">
             <intent-filter>
@@ -127,7 +133,8 @@
             android:targetActivity=".MainActivity"
             android:exported="true"
             android:enabled="false"
-            android:icon="@drawable/ic_launcher"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
             android:label="@string/icon_name_5"
             android:theme="@style/Theme.Yuewen">
             <intent-filter>
@@ -141,7 +148,8 @@
             android:targetActivity=".MainActivity"
             android:exported="true"
             android:enabled="false"
-            android:icon="@drawable/ic_launcher"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
             android:label="@string/icon_name_6"
             android:theme="@style/Theme.Yuewen">
             <intent-filter>
@@ -155,7 +163,8 @@
             android:targetActivity=".MainActivity"
             android:exported="true"
             android:enabled="false"
-            android:icon="@drawable/ic_launcher"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
             android:label="@string/icon_name_7"
             android:theme="@style/Theme.Yuewen">
             <intent-filter>

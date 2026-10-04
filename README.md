@@ -124,7 +124,7 @@
 
 | | 版本 |
 |---|---|
-| JDK | 17 |
+| JDK | 17 ~ 21（推荐 17；Kotlin 1.9.24 的编译器不支持 22 及以上） |
 | Android SDK | API 34（compileSdk / targetSdk），最低运行 API 26 |
 | Gradle | 8.6（仓库自带 wrapper，不用自己装） |
 | Kotlin | 1.9.24（由 Gradle 自动下载） |
@@ -141,7 +141,7 @@ cd yuewen
 echo "sdk.dir=/path/to/Android/Sdk" > local.properties
 
 # 3. 构建
-./gradlew assembleDebug          # 调试包：app/build/outputs/apk/debug/app-v2.7.4.apk
+./gradlew assembleDebug          # 调试包 → app/build/outputs/apk/debug/app-v<版本号>.apk
 ./gradlew assembleRelease        # 发布包（开了 R8，体积小很多、也更流畅）
 
 # 4. 装到设备上
@@ -157,6 +157,32 @@ Windows 上用 `gradlew.bat` 代替 `./gradlew`。
 > **macOS / Linux 用户先给脚本补可执行位**：如果 clone 下来跑 `./gradlew` 报
 > `permission denied`，是仓库里这个文件的权限位丢了（历史上从 Windows 提交过）。
 > 一条命令修好：`chmod +x gradlew tools/jvmtest/run.sh`。
+
+> **⚠️ JDK 必须是 17~21，不能更新也不能更旧。**
+> 这个项目锁的是 AGP 8.x + Kotlin 1.9.24，Kotlin 1.9 的编译器**只认 JDK 17~21**。
+> 坑在于：Homebrew 那个不带版本号的 `openjdk` 公式会跟着 `brew upgrade` 一路往上升，
+> 于是 `JAVA_HOME` 指向的 JDK 会**悄悄从 17 变成 26**。此时构建会以一句极其
+> 没头没脑的错误失败：
+>
+> ```
+> * What went wrong:
+> 26.0.1
+> ```
+>
+> 那不是版本号打错了，是 Kotlin 编译器在读 JVM 版本串时直接抛异常 —— 报错信息里
+> 只剩下这个数字。**遇到就检查 `java -version`，然后临时指定 JDK 17 构建**：
+>
+> ```bash
+> # macOS（用 brew 装的 17）
+> JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home ./gradlew assembleDebug
+> # Linux
+> JAVA_HOME=/usr/lib/jvm/java-17-openjdk ./gradlew assembleDebug
+> ```
+>
+> 一劳永逸的做法是把 `~/.zshrc` 里的 `JAVA_HOME` 换成**带版本号**的那个路径
+> （`openjdk@17` 而不是 `openjdk`），这样它就不会随 brew 升级乱跑了。
+> 同一个坑也会让 `tools/jvmtest/run.sh` 挂掉 —— 不过那个脚本已经改成
+> 「自己在候选列表里找 17~21」，会自己绕过。
 
 > **关于 Maven 镜像**：`settings.gradle.kts` 里把腾讯云镜像放在了第一位，
 > 这是为了让国内网络能正常拉依赖。国外网络如果觉得慢，把那一行删掉即可，

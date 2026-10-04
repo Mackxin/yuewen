@@ -65,7 +65,10 @@ class RefreshWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
         )
 
         val notif = NotificationCompat.Builder(applicationContext, channelId)
-            .setSmallIcon(R.drawable.ic_launcher)
+            // v2.7.5：改用专用的通知小图标。
+            // 原来这里是 R.drawable.ic_launcher —— 那是张 108×108 的整块绿色方块，
+            // 而通知栏只取 alpha 再统一染色，于是状态栏里出现一个实心白方块。
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("阅闻")
             .setContentText("有 $newCount 条新内容更新")
             .setContentIntent(openApp)
