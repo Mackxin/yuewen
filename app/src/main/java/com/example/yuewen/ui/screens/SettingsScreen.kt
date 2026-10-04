@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -51,6 +53,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -134,6 +137,59 @@ private fun Caption(text: String) {
         // 底边距 9 → 6：说明文字和它下面那条分隔线本来就不该隔太远
         modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 2.dp, bottom = 6.dp)
     )
+}
+
+/**
+ * 折叠说明（v2.7.6）：常显一行摘要，点右侧小箭头展开完整解释。
+ *
+ * **为什么设置页不能照搬阅源页那种「整块说明收进折叠」**：
+ * 阅源页顶部那三行是「怎么用这个 App」的通用引导，看过一次就永远不需要了；
+ * 而设置里每条说明都是**这一项配置到底会干什么** —— 是用户当下正要读的东西。
+ * 整块收掉等于把帮助藏起来，得不偿失。
+ *
+ * 所以这里用折中方案：摘要在外面（一眼看懂这条设置是干嘛的），
+ * 补充细节（边界情况、连带影响、历史沿革）挪进展开区。
+ * 原本 2~4 行的灰字一律压到 1 行，整页读下来不再是「说明书」。
+ *
+ * ⚠️ 状态用 `rememberSaveable` 而不是 `remember`：这一页是 `Column + verticalScroll`
+ * 而不是 `LazyColumn`，节点不会被回收，但**转屏 / 分屏会重建**，
+ * `remember` 会让用户刚展开的说明又自己合上。
+ */
+@Composable
+private fun CaptionMore(summary: String, detail: String) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    val cs = MaterialTheme.colorScheme
+    Column(Modifier.padding(start = 18.dp, end = 18.dp, top = 2.dp, bottom = 6.dp)) {
+        Row(
+            modifier = Modifier
+                .clip(MaterialTheme.shapes.small)
+                .clickable { open = !open }
+                .padding(horizontal = 2.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                summary,
+                style = MaterialTheme.typography.labelSmall,
+                color = cs.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = if (open) "收起说明" else "展开说明",
+                tint = cs.primary,
+                modifier = Modifier.size(14.dp)
+            )
+        }
+        if (open) {
+            Text(
+                detail,
+                style = MaterialTheme.typography.labelSmall,
+                color = cs.onSurfaceVariant,
+                modifier = Modifier.padding(top = 3.dp, start = 2.dp, end = 2.dp)
+            )
+        }
+    }
 }
 
 /** 分隔线。`inset` = 左右留边（夹在两排胶囊之间时用，视觉上更松）。 */
@@ -765,7 +821,10 @@ fun SettingsScreen(
                     selectedIndex = ReaderTheme.of(readerTheme).ordinal,
                     onSelect = { vm.setReaderTheme(ReaderTheme.entries[it].key) }
                 )
-                Caption("「米黄纸感」和「墨夜」就是原来的正念阅读模式。详情页右上角那个 Aa 按钮也能改这几项。")
+                CaptionMore(
+                    summary = "详情页右上角的 Aa 按钮也能改这几项。",
+                    detail = "「米黄纸感」和「墨夜」就是原来的正念阅读模式，只是换了名字。"
+                )
                 Div()
                 ChoiceRow(
                     label = "朗读语速",
@@ -773,21 +832,22 @@ fun SettingsScreen(
                     selectedIndex = ttsRate.coerceIn(0, TtsRateLabels.lastIndex),
                     onSelect = { vm.setTtsRate(it) }
                 )
-                Caption("慢 / 标准 / 快 / 很快四档。朗读过程中改的话，从下一句开始生效。")
+                Caption("朗读过程中改的话，从下一句开始生效。")
                 Div()
                 SettingsRow(
                     "朗读时显示通知栏控制",
                     trailing = { Switch(checked = ttsNotify, onCheckedChange = { vm.setTtsNotify(it) }) }
                 )
-                Caption(
-                    "开启后，朗读时会挂一条通知：锁屏 / 通知栏就能暂停、继续、停止，详情页顶部也会浮出一条「回到文章」。"
+                CaptionMore(
+                    summary = "朗读时挂一条通知，锁屏也能暂停 / 继续 / 停止。",
+                    detail = "详情页顶部还会浮出一条「回到文章」，点一下直接跳回正文。"
                 )
                 Div()
                 SettingsRow(
                     "阅读文章时显示底部导航栏",
                     trailing = { Switch(checked = showBarInReader, onCheckedChange = { vm.setShowBarInReader(it) }) }
                 )
-                Caption("开启后读文章时底栏依然在，可以随时切走；关闭则是全屏沉浸阅读。")
+                Caption("关掉就是全屏沉浸阅读，只能靠返回键退出。")
                 Div()
                 // v2.2：打开原文用哪个浏览器。
                 // 「跟随系统」永远排第一 —— 它是默认值，也是出问题时的退路。
@@ -806,9 +866,9 @@ fun SettingsScreen(
                     else emptyList(),
                     onPickExtra = { vm.setBrowserPkg(BrowserLauncher.SYSTEM) }
                 )
-                Caption(
-                    "点「原文」时用哪个应用打开。选「跟随系统」就交给安卓自己决定（和以前一样）；" +
-                        "选了具体浏览器之后，中途把它卸载了会自动退回系统默认，不会打不开。"
+                CaptionMore(
+                    summary = "选「跟随系统」就交给安卓自己决定用哪个应用打开。",
+                    detail = "选了具体浏览器之后，中途把它卸载了会自动退回系统默认，不会出现点「原文」打不开的情况。"
                 )
             }
         }
@@ -853,9 +913,9 @@ fun SettingsScreen(
                     onHue = { vm.setCustomHue(it) },
                     onSat = { vm.setCustomSat(it) }
                 )
-                Caption(
-                    "点一下就换，整个界面立刻生效。下面这排是内置配色；" +
-                        "选「自定义」可以自己调色相和鲜艳度，拖到哪就是哪。"
+                CaptionMore(
+                    summary = "点一下就换，整个界面立刻生效，不需要再点「应用」。",
+                    detail = "上面这排是内置配色；选「自定义」可以自己拖色相和鲜艳度，拖到哪就是哪。"
                 )
                 Div()
                 DropdownRow(
@@ -874,7 +934,10 @@ fun SettingsScreen(
                     selectedIndex = listMode.ordinal,
                     onSelect = { vm.setListMode(ArticleListMode.entries[it]) }
                 )
-                Caption("紧凑省地方、卡片有缩略图、杂志图最大。首页右上角的按钮也能随时切换。")
+                CaptionMore(
+                    summary = "紧凑省地方、卡片有缩略图、杂志图最大。",
+                    detail = "首页右上角的布局按钮也能随时切换（可以在下面把那个按钮关掉）。"
+                )
 
                 // 首页顶栏：三个按钮加副标题，都能单独关掉
                 Div()
@@ -893,13 +956,13 @@ fun SettingsScreen(
                     "显示副标题",
                     trailing = { Switch(checked = homeShowSubtitle, onCheckedChange = { vm.setHomeShowSubtitle(it) }) }
                 )
-                Caption("不喜欢顶栏太挤就关掉几个；下拉着照样能刷新，布局在下面「列表布局」里也能改。")
+                Caption("三个按钮都能单独关；关掉刷新按钮后，下拉仍然可以刷新。")
                 Div()
                 SettingsRow(
                     "首页顶部筛选图标",
                     trailing = { Switch(checked = homeFilterIcons, onCheckedChange = { vm.setHomeFilterIcons(it) }) }
                 )
-                Caption("默认显示。那两个小图标分别是「仅看未读 / 显示全部」和「全部标为已读」。")
+                Caption("两个小图标分别是「仅看未读 / 显示全部」和「全部标为已读」。")
 
                 // ---- v2.0.2 / v2.5：首页那两行筛选胶囊各自的开关 ----
                 // v2.5：原来是一把三档开关（分类 / 阅源 / 都显示），但它描述的其实就是
@@ -916,9 +979,9 @@ fun SettingsScreen(
                     "显示「阅源」行",
                     trailing = { Switch(checked = showSourceRow, onCheckedChange = { vm.setHomeShowSourceRow(it) }) }
                 )
-                Caption(
-                    "首页标题下面那排胶囊：「分类」行选大类，「阅源」行选具体来源，" +
-                        "两个条件是叠加的。哪一行用不上就关掉，关掉后那一级的筛选会一起清空，不会留下看不见的条件。"
+                CaptionMore(
+                    summary = "「分类」选大类，「阅源」选具体来源，两个条件叠加生效。",
+                    detail = "关掉某一行会同时清空那一级的筛选，不会留下看不见的条件。"
                 )
 
                 // ---- v2.4：首页关键词胶囊 ----
@@ -984,16 +1047,16 @@ fun SettingsScreen(
                         Caption("点一下某个词就能删掉它（最多 $HOME_KEYWORD_LIMIT 个）。")
                     }
                 }
-                Caption(
-                    "这里填的词会变成首页顶部的一排胶囊：点一下，首页就只看标题 / 摘要 / 正文里含这个词的文章，" +
-                        "再点一次取消。和分类、阅源是叠加关系 —— 三个条件同时生效。"
+                CaptionMore(
+                    summary = "填的词会变成首页顶部的胶囊，点一下只看含这个词的文章。",
+                    detail = "匹配范围是标题 / 摘要 / 正文，再点一次取消。和分类、阅源是叠加关系，三个条件同时生效。"
                 )
                 Div()
                 SettingsRow(
                     "显示关键词行",
                     trailing = { Switch(checked = homeShowKeywords, onCheckedChange = { vm.setHomeShowKeywords(it) }) }
                 )
-                Caption("关掉只是首页不再显示那一行，上面填的词会原样留着，随时可以再打开。")
+                Caption("关掉只是不显示，填过的词会留着，随时能再打开。")
                 Div()
                 // ⚠️⚠️ v2.6.0 修：选项**不再按顶栏那两行的开关过滤**。
                 // 原写法是「分类行关着就不列分类项、阅源行关着就不列阅源项」，本意是「免得选了不生效」。
@@ -1026,10 +1089,9 @@ fun SettingsScreen(
                         else vm.setHomeDefaultSource(key.removePrefix("s:"))
                     }
                 )
-                Caption(
-                    "下次打开 App 时列表默认按这一项筛选。中途点了别的胶囊不影响这里 —— " +
-                        "这一项是「开机默认」，不是「记住上次」。\n" +
-                        "选项来自你订阅的源和它们的分类；如果上面「显示「分类」行 / 显示「阅源」行」是关着的，" +
+                CaptionMore(
+                    summary = "「开机默认」，不是「记住上次」—— 中途点别的胶囊不影响它。",
+                    detail = "选项来自你订阅的源和它们的分类。如果上面「显示「分类」行 / 显示「阅源」行」是关着的，" +
                         "对应那一级选了也不会生效，想用就先把它打开。"
                 )
 
@@ -1070,7 +1132,7 @@ fun SettingsScreen(
                     "底栏显示未读数字",
                     trailing = { Switch(checked = unreadBadge, onCheckedChange = { vm.setUnreadBadge(it) }) }
                 )
-                Caption("默认关闭：底部导航「首页」图标上不显示未读条数，底栏更干净。打开后最多显示 99+。")
+                Caption("打开后底栏「首页」图标上显示未读条数，最多 99+。")
             }
         }
 
@@ -1084,7 +1146,7 @@ fun SettingsScreen(
                     trailing = { ValueTrailing(titleOrDefault(appTitle)) },
                     onClick = { titleEditing = true }
                 )
-                Caption("首页顶部那个大标题、还有「关于」页里都用这个名字。留空就用默认的「阅闻」。")
+                Caption("首页大标题和「关于」页都用它；留空用默认的「阅闻」。")
                 Div()
                 // 桌面图标名：系统不允许运行时改 android:label，
                 // 只能预置若干个 activity-alias，在这里挑一个（本质是切换 alias）。
@@ -1108,9 +1170,9 @@ fun SettingsScreen(
                         ).show()
                     }
                 )
-                Caption(
-                    "这是手机桌面上图标底下显示的文字。系统不允许 App 随便改，只能从这几个里挑；" +
-                        "而上面那个「应用内名称」可以随便写。"
+                CaptionMore(
+                    summary = "桌面图标底下那行字，系统不允许随便改。",
+                    detail = "只能从这几个里挑。想改 App 里的标题用上面那个「应用内名称」，那个可以随便写。"
                 )
             }
         }
@@ -1148,13 +1210,13 @@ fun SettingsScreen(
                     selectedKey = "$refresh",
                     onPick = { vm.setRefreshMinutes(it.toIntOrNull() ?: 30) }
                 )
-                Caption("后台多久自动拉一次新文章。关掉之后就只在你手动下拉时刷新。")
+                Caption("关掉之后就只在你手动下拉时刷新。")
                 Div()
                 SettingsRow(
                     "打开 App 自动刷新",
                     trailing = { Switch(checked = refreshOnLaunch, onCheckedChange = { vm.setRefreshOnLaunch(it) }) }
                 )
-                Caption("默认开启：每次打开 App 自动拉一次最新文章。距上次刷新不到 5 分钟会自动跳过。")
+                Caption("距上次刷新不到 5 分钟会自动跳过。")
                 Div()
                 SettingsRow(
                     "打开文章自动标为已读",
@@ -1171,9 +1233,9 @@ fun SettingsScreen(
                     "自动预加载正文",
                     trailing = { Switch(checked = preloadAuto, onCheckedChange = { vm.setPreloadAuto(it) }) }
                 )
-                Caption(
-                    "默认关闭。打开后每次刷新完会在后台把每篇文章的完整正文抓下来存进本机 —— " +
-                        "网络差或完全没网时也能读到全文，而不是只有 feed 里那句摘要。"
+                CaptionMore(
+                    summary = "打开后会把每篇的完整正文抓下来，没网也能读全文。",
+                    detail = "默认关闭。抓的是正文而不是 feed 里那句摘要，所以每次刷新之后还要多跑一会儿。"
                 )
                 if (preloadAuto) {
                     Div()
@@ -1181,7 +1243,7 @@ fun SettingsScreen(
                         "仅在 Wi-Fi 下预加载",
                         trailing = { Switch(checked = preloadWifiOnly, onCheckedChange = { vm.setPreloadWifiOnly(it) }) }
                     )
-                    Caption("默认开启。抓正文是逐篇访问网页，比抓 RSS 重得多，不该在流量上偷跑。")
+                    Caption("抓正文要逐篇访问网页，比抓 RSS 重得多，不该在流量上偷跑。")
                 }
                 Div()
                 // 一次性把还没正文的文章全抓下来（手动不受上面两个开关限制：点了就是要跑）
@@ -1230,7 +1292,7 @@ fun SettingsScreen(
                     buildString {
                         append("已缓存 ${cache.fullTextCount} 篇正文")
                         if (cache.fullTextChars > 0) append("（约 ${cache.fullTextChars / 1000} 千字）")
-                        append("。\n出门前点一次「立即缓存全部正文」，路上没信号也能把当天的文章读完。")
+                        append("。\n出门前点一次「立即缓存全部正文」，路上没信号也能读。")
                         if (preloadAuto && preloadWifiOnly && !onWifi) {
                             append("\n当前不在 Wi-Fi：自动预加载会等连上 Wi-Fi 再跑。")
                         }
@@ -1341,7 +1403,7 @@ fun SettingsScreen(
                     trailing = { Text(summary.ifBlank { "订阅 / 收藏 / 笔记" }, color = cs.onSurfaceVariant) },
                     onClick = { showBackup = true }
                 )
-                Caption("把订阅源、收藏、摘录笔记和个性化设置打包成一个文件，换手机或重装时导入即可。")
+                Caption("换手机、重装时导入这一个文件就够了。")
                 Div()
                 SettingsRow(
                     "阅读统计",
