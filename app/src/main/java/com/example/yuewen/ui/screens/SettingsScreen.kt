@@ -67,6 +67,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -114,19 +115,37 @@ private fun GroupTitle(text: String) {
         text,
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        // 分组标题：顶部 11dp 把上一组和这一组分开，底部 4dp 贴近它自己的卡片
-        modifier = Modifier.padding(start = 22.dp, top = 11.dp, bottom = 4.dp)
+        // v2.11 对齐修正：原来这里是 22dp —— 比卡片左边缘（12dp）往右一点、
+        // 又比行内容（30dp）往左一点，**三条左边界谁也对不齐**，整页看起来就是歪的。
+        // 现在改成和卡片左边缘同一条线（12dp）：页面上只剩两列 —— 卡片/组标题一列、
+        // 行内容一列。这是列表里最常见的做法，也是最省事的判据：
+        // 任何新加的东西，要么齐 12、要么齐 30，没有第三种。
+        modifier = Modifier.padding(start = 12.dp, top = 18.dp, bottom = 6.dp)
     )
 }
 
-/** 卡片内部的小标题：用来把一张长卡片里的「首页顶栏」这类子块分开。 */
+/**
+ * 卡片内部的小标题：用来把一张长卡片里的「顶栏」「筛选」「排序」这类子块分开。
+ *
+ * v2.11：**必须和 [Caption] 明显不同**，否则整页就散了。
+ *
+ * 原来的写法是 `labelMedium` + `onSurfaceVariant`，跟说明文字（`labelSmall` +
+ * `onSurfaceVariant`）几乎一个样 —— 屏幕上看到的就是「顶栏」两个字孤零零地浮在卡片顶部，
+ * 分不清它到底是「下面这一段的标题」还是「上面那条的补充说明」。这正是用户说的「乱」。
+ *
+ * 现在四个层级各走各的：组标题（卡外，灰小字）→ **小标题（卡内，近黑、中等字重、
+ * 比行标签小一号）** → 行标签（正文字号、近黑）→ 说明（灰小字）。小标题靠「字号小 +
+ * 字重中 + 颜色近黑 + 上下留白」跟行标签区分，靠「颜色深」跟说明文字区分。
+ */
 @Composable
 private fun SubTitle(text: String) {
     Text(
         text,
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 7.dp, bottom = 1.dp)
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.Medium,
+        // 0.85 而不是纯 onSurface：比行标签轻一点，不会抢走「真正要点的东西」的分量
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+        modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 2.dp)
     )
 }
 
@@ -180,8 +199,12 @@ private fun CaptionMore(summary: String, detail: String) {
             Icon(
                 if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                 contentDescription = if (open) "收起说明" else "展开说明",
-                tint = cs.primary,
-                modifier = Modifier.size(14.dp)
+                // v2.11：箭头从主色改成次要文字色。
+                // 主色 + 贴在行尾，看上去和「点这一条能跳转」的导航行是同一个东西 ——
+                // 而它其实只是「这段灰字还能展开」。降成灰的、尺寸也压小一点，
+                // 它才回到「注脚的一部分」这个位置。
+                tint = cs.onSurfaceVariant.copy(alpha = 0.75f),
+                modifier = Modifier.size(13.dp)
             )
         }
         if (open) {
@@ -195,15 +218,45 @@ private fun CaptionMore(summary: String, detail: String) {
     }
 }
 
-/** 分隔线。`inset` = 左右留边（夹在两排胶囊之间时用，视觉上更松）。 */
+/**
+ * 卡片内的分隔线。
+ *
+ * v2.11：**全页只有一种分隔线** —— 左侧让出 18dp、和行文字对齐，右侧一直画到卡片边缘。
+ *
+ * 以前这里有个 `inset` 参数，第一张卡的「字号 / 行距 / 字体」用内缩版、
+ * 其余全用通栏版，于是同一张卡里分隔线一会儿从左边界开始、一会儿从卡片边缘开始，
+ * 看着像两套模板拼起来的。现在把参数删掉，只保留内缩那一种：
+ * 通栏版会顶到卡片的圆角上，视觉上像把卡片切断了。
+ */
 @Composable
-private fun Div(inset: Boolean = false) {
+private fun Div() {
     HorizontalDivider(
         color = MaterialTheme.colorScheme.outlineVariant,
-        modifier = if (inset) Modifier.padding(horizontal = 18.dp) else Modifier
+        modifier = Modifier.padding(start = 18.dp)
     )
 }
 
+/**
+ * 一行「标签 + 行尾控件」。
+ *
+ * v2.11 修：**行尾太长会把标签压到 0 宽，两块文字直接叠在一起。**
+ *
+ * 起因是「备份与恢复」那一行 —— 行尾要显示本机统计（`12 个阅源 · 0 篇收藏 ·
+ * 0 篇稍后读 · 0 条笔记`），二十几个字。原来的写法是
+ * `Row(SpaceBetween) { Text(label); trailing() }`：两段都是「要多少给多少」，
+ * 行尾先吃饱，标签就只剩 0 宽 —— 文字不会消失，它会从 0 宽的格子里**画出来**，
+ * 于是「备份与恢复」四个字直接压在统计数字上面。这个 bug 平时看不见，
+ * 因为默认文案「订阅 / 收藏 / 笔记」很短，只有数据一多才露出来。
+ *
+ * ⚠️ 修法必须是「**标签自然宽度、行尾吃剩余空间**」，不能反过来给两边各一半：
+ * 试过 `weight(1f)` 对半分，结果「读完的文章自动移出稍后读」这种十字标签
+ * 半行放不下，直接折成两行 —— 比原来的叠字还难看。
+ *
+ * Compose 的 Row 本来就先量「不带 weight 的」子项、再按剩余空间分配给带 weight 的，
+ * 所以这里只给行尾那个 Box 加 weight：
+ * · 标签按自己的内容取宽度，永远不折行（标签都很短）；
+ * · 行尾最多拿到「整行减去标签」的宽度，超了就换行/省略，但绝不会覆盖标签。
+ */
 @Composable
 private fun SettingsRow(label: String, trailing: @Composable () -> Unit, onClick: (() -> Unit)? = null) {
     Row(
@@ -215,8 +268,17 @@ private fun SettingsRow(label: String, trailing: @Composable () -> Unit, onClick
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(label, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
-        trailing()
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1
+        )
+        Spacer(Modifier.width(10.dp))
+        Box(
+            modifier = Modifier.weight(1f, fill = false),
+            contentAlignment = Alignment.CenterEnd
+        ) { trailing() }
     }
 }
 
@@ -319,10 +381,19 @@ private fun TimePresetRow(
     }
 }
 
-/** 行尾的「当前值 ▾」样式，三处下拉菜单共用。 */@Composable
+/** 行尾的「当前值 ▾」样式，三处下拉菜单共用。 */
+@Composable
 private fun ValueTrailing(text: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            text,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            // v2.11：值可能很长（「打开原文的浏览器」存的是包名，二十几个字符），
+            // 不设上限就会把左边的标签挤成两行、或者顶出卡片。截断成省略号，
+            // 完整值反正进菜单就能看到。
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
         Icon(
             Icons.Filled.ArrowDropDown,
             contentDescription = null,
@@ -367,9 +438,21 @@ private fun DropdownRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(label, style = MaterialTheme.typography.bodyLarge, color = cs.onSurface)
+        // 标签走自然宽度（不折行），权重只加在右边的值上 —— 理由见 [SettingsRow]：
+        // 两边各一半那种做法会让「打开原文的浏览器」这种七字标签被挤成两行。
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = cs.onSurface,
+            maxLines = 1
+        )
         // 菜单挂在这个 Box 上（它只占右侧值那么宽）→ 从右边弹出来
-        Box(modifier = Modifier.align(Alignment.CenterVertically)) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterVertically)
+                .weight(1f, fill = false)
+                .padding(start = 10.dp)
+        ) {
             ValueTrailing(value)
             DropdownMenu(
                 expanded = expanded,
@@ -417,8 +500,19 @@ private fun DropdownRowWithExtra(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(label, style = MaterialTheme.typography.bodyLarge, color = cs.onSurface)
-        Box(modifier = Modifier.align(Alignment.CenterVertically)) {
+        // 同 [DropdownRow]：标签自然宽度、值吃剩余空间。
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = cs.onSurface,
+            maxLines = 1
+        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterVertically)
+                .weight(1f, fill = false)
+                .padding(start = 10.dp)
+        ) {
             ValueTrailing(value)
             DropdownMenu(
                 expanded = expanded,
@@ -690,6 +784,7 @@ fun SettingsScreen(
     val showBarInReader by vm.showBarInReader.collectAsStateWithLifecycle()
     val refreshOnLaunch by vm.refreshOnLaunch.collectAsStateWithLifecycle()
     val unreadBadge by vm.unreadBadge.collectAsStateWithLifecycle()
+    val barIcons by vm.barIcons.collectAsStateWithLifecycle()
     val homeFilterIcons by vm.homeFilterIcons.collectAsStateWithLifecycle()
     // v1.9：离线阅读 + 朗读语速
     val preloadAuto by vm.preloadAuto.collectAsStateWithLifecycle()
@@ -906,7 +1001,10 @@ fun SettingsScreen(
         modifier = Modifier.fillMaxSize().background(cs.background).verticalScroll(rememberScrollState())
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 9.dp),
+            // v2.11：18 → 12，跟卡片左边缘、跟每个组标题同一条竖线。
+            // 页面上原本「设置」「阅读与朗读」「字号」三行字分别齐 18 / 22 / 30，
+            // 三条左边界 = 没有网格。现在只剩 12（卡片、标题）和 30（卡内内容）两列。
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("设置", style = MaterialTheme.typography.titleLarge, color = cs.onBackground)
@@ -922,21 +1020,21 @@ fun SettingsScreen(
                     selectedIndex = readerSize.coerceIn(0, ReaderSizeLabels.lastIndex),
                     onSelect = { vm.setReaderSize(it) }
                 )
-                Div(inset = true)
+                Div()
                 ChoiceRow(
                     label = "行距",
                     options = ReaderSpacing.entries.map { it.label },
                     selectedIndex = ReaderSpacing.of(readerSpacing).ordinal,
                     onSelect = { vm.setReaderSpacing(ReaderSpacing.entries[it].key) }
                 )
-                Div(inset = true)
+                Div()
                 ChoiceRow(
                     label = "字体",
                     options = ReaderFont.entries.map { it.label },
                     selectedIndex = ReaderFont.of(readerFont).ordinal,
                     onSelect = { vm.setReaderFont(ReaderFont.entries[it].key) }
                 )
-                Div(inset = true)
+                Div()
                 ChoiceRow(
                     label = "底色",
                     options = ReaderTheme.entries.map { it.label },
@@ -964,12 +1062,9 @@ fun SettingsScreen(
                     summary = "朗读时挂一条通知，锁屏也能暂停 / 继续 / 停止。",
                     detail = "详情页顶部还会浮出一条「回到文章」，点一下直接跳回正文。"
                 )
-                Div()
-                SettingsRow(
-                    "阅读文章时显示底部导航栏",
-                    trailing = { Switch(checked = showBarInReader, onCheckedChange = { vm.setShowBarInReader(it) }) }
-                )
-                Caption("关掉就是全屏沉浸阅读，只能靠返回键退出。")
+                // v2.11：「阅读文章时显示底部导航栏」搬去了「底部导航栏」那一组。
+                // 它说的是**底栏**的事，和「朗读」没有半点关系，原先挤在这里纯粹是历史原因；
+                // 而底栏的三项（图标 / 未读数字 / 阅读时是否显示）本来就该放在一起看。
                 Div()
                 // v2.2：打开原文用哪个浏览器。
                 // 「跟随系统」永远排第一 —— 它是默认值，也是出问题时的退路。
@@ -1017,7 +1112,10 @@ fun SettingsScreen(
                                     l,
                                     color = if (sel) cs.primary else cs.onSurface,
                                     style = MaterialTheme.typography.labelMedium,
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                                    // v2.11：12/7 → 10/5，和 [ChoiceRow] 的胶囊完全同一套尺寸。
+                                    // 原来这排（浅色/自动/深色）比下面「字号」「行距」的胶囊
+                                    // 各高一头、宽一头，同一张卡里出现两种大小的胶囊，很显乱。
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                                 )
                             }
                         }
@@ -1061,9 +1159,58 @@ fun SettingsScreen(
                     detail = "首页右上角的布局按钮也能随时切换（可以在下面把那个按钮关掉）。"
                 )
 
-                // 首页顶栏：三个按钮加副标题，都能单独关掉
+                // ---- v2.11：原来的「个性」组并进这里 ----
+                // 「个性」单独一张卡只剩「应用内名称 / 桌面图标名称」两行，为两行开一个
+                // 组标题、单独占一段留白，反而是全页最碎的地方。而这两项改的本来就是
+                // 「长什么样」，和外观是同一类东西 —— 合进来之后少一个组标题、少一次视线跳。
                 Div()
-                SubTitle("首页顶栏")
+                SubTitle("应用名称与图标")
+                // 应用内名称：首页大标题、「关于」页都用它。留空回落到默认「阅闻」。
+                SettingsRow(
+                    "应用内名称",
+                    trailing = { ValueTrailing(titleOrDefault(appTitle)) },
+                    onClick = { titleEditing = true }
+                )
+                Caption("首页大标题和「关于」页都用它；留空用默认的「阅闻」。")
+                Div()
+                // 桌面图标名：系统不允许运行时改 android:label，
+                // 只能预置若干个 activity-alias，在这里挑一个（本质是切换 alias）。
+                DropdownRow(
+                    label = "桌面图标名称",
+                    value = iconNameOf(iconIdx),
+                    expanded = iconExpanded,
+                    onExpandedChange = { iconExpanded = it },
+                    options = IconNames.mapIndexed { i, name -> "$i" to name },
+                    selectedKey = "$iconIdx",
+                    onPick = { key ->
+                        val i = key.toIntOrNull() ?: return@DropdownRow
+                        val ok = vm.setIconNameIndex(i)
+                        Toast.makeText(
+                            context,
+                            if (ok) "已切换，桌面图标名可能要一两秒才刷新"
+                            else "切换失败：部分系统不允许改桌面图标名",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                )
+                CaptionMore(
+                    summary = "桌面图标底下那行字，系统不允许随便改。",
+                    detail = "只能从这几个里挑。想改 App 里的标题用上面那个「应用内名称」，那个可以随便写。"
+                )
+            }
+        }
+
+        // ==================== 3. 首页 ====================
+        //
+        // v2.11：从「外观」里拆出来的。原来「外观」一张卡装着主题、配色、字体、列表布局、
+        // 首页顶栏、首页筛选、关键词、默认筛选、排序、底栏未读数字**十项**,跨了五个小节，
+        // 想改「首页筛选」得先滚过一整屏的配色和字体。拆开之后每个组只回答一个问题：
+        // 外观 = 长什么样；首页 = 首页上有什么；底部导航栏 = 底栏怎么显示。
+        GroupTitle("首页")
+        Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+            Column {
+                // 首页顶栏：三个按钮加副标题，都能单独关掉
+                SubTitle("顶栏")
                 SettingsRow(
                     "显示「布局」按钮",
                     trailing = { Switch(checked = homeShowLayout, onCheckedChange = { vm.setHomeShowLayout(it) }) }
@@ -1091,7 +1238,7 @@ fun SettingsScreen(
                 // 「两行各自要不要显示」，读起来绕。拆成两个独立开关，和上面「显示副标题」
                 // 是同一套心智模型，四种组合也都能表达。
                 Div()
-                SubTitle("首页筛选")
+                SubTitle("筛选")
                 SettingsRow(
                     "显示「分类」行",
                     trailing = { Switch(checked = showCategoryRow, onCheckedChange = { vm.setHomeShowCategoryRow(it) }) }
@@ -1218,8 +1365,11 @@ fun SettingsScreen(
                 )
 
                 // ---- v2.2：文章怎么排 ----
+                //
+                // v2.11：这里原来还有个 SubTitle("排序")，删掉了 —— 它底下只有
+                // 「排序方式」一行，而那一行的标签本身就把意思说完，小标题等于复读一遍。
+                // 判断标准：小标题底下**至少两行**才值得加，否则就是多一层噪声。
                 Div()
-                SubTitle("文章排序")
                 // 用下拉而不是横排胶囊：五个档位横排会挤出屏幕（「最新在前」这种四字标签尤其占地方）
                 DropdownRow(
                     label = "排序方式",
@@ -1249,57 +1399,45 @@ fun SettingsScreen(
                         HomeSortMode.Title -> "按标题字典序排。记得标题里几个字、忘了是哪个源的，用它翻更快。"
                     }
                 )
-                Div()
-                SettingsRow(
-                    "底栏显示未读数字",
-                    trailing = { Switch(checked = unreadBadge, onCheckedChange = { vm.setUnreadBadge(it) }) }
-                )
-                Caption("打开后底栏「首页」图标上显示未读条数，最多 99+。")
             }
         }
 
-        // ==================== 3. 个性 ====================
-        GroupTitle("个性")
+        // ==================== 4. 底部导航栏 ====================
+        //
+        // v2.11：新开的一组。这三项原来散在两处 ——「阅读文章时显示底部导航栏」在
+        // 「阅读与朗读」里（它跟朗读毫无关系，纯粹是早先随手放的），「未读数字」在
+        // 「外观」的最末尾（得滚过整屏配色、字体、排序才找得到）。
+        // 而用户想调底栏的时候，脑子里就一个问题：「底栏长什么样」。三项并排给他看。
+        GroupTitle("底部导航栏")
         Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
             Column {
-                // 应用内名称：首页大标题、「关于」页都用它。留空回落到默认「阅闻」。
                 SettingsRow(
-                    "应用内名称",
-                    trailing = { ValueTrailing(titleOrDefault(appTitle)) },
-                    onClick = { titleEditing = true }
-                )
-                Caption("首页大标题和「关于」页都用它；留空用默认的「阅闻」。")
-                Div()
-                // 桌面图标名：系统不允许运行时改 android:label，
-                // 只能预置若干个 activity-alias，在这里挑一个（本质是切换 alias）。
-                // 桌面图标名：系统不允许运行时改 android:label，
-                // 只能预置若干个 activity-alias，在这里挑一个（本质是切换 alias）。
-                DropdownRow(
-                    label = "桌面图标名称",
-                    value = iconNameOf(iconIdx),
-                    expanded = iconExpanded,
-                    onExpandedChange = { iconExpanded = it },
-                    options = IconNames.mapIndexed { i, name -> "$i" to name },
-                    selectedKey = "$iconIdx",
-                    onPick = { key ->
-                        val i = key.toIntOrNull() ?: return@DropdownRow
-                        val ok = vm.setIconNameIndex(i)
-                        Toast.makeText(
-                            context,
-                            if (ok) "已切换，桌面图标名可能要一两秒才刷新"
-                            else "切换失败：部分系统不允许改桌面图标名",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
+                    "显示图标",
+                    trailing = { Switch(checked = barIcons, onCheckedChange = { vm.setBarIcons(it) }) }
                 )
                 CaptionMore(
-                    summary = "桌面图标底下那行字，系统不允许随便改。",
-                    detail = "只能从这几个里挑。想改 App 里的标题用上面那个「应用内名称」，那个可以随便写。"
+                    summary = "默认只留文字：四个短词并排，比四个图标更好认。",
+                    detail = "打开之后每个词前面加一个图标（首页 / 闻件 / 阅源 / 设置）。" +
+                        "底栏高度不会因为这一项变化。"
                 )
+                Div()
+                SettingsRow(
+                    "显示未读数字",
+                    trailing = { Switch(checked = unreadBadge, onCheckedChange = { vm.setUnreadBadge(it) }) }
+                )
+                // v2.11：文案里原来写「底栏「首页」**图标上**显示未读条数」——
+                // 图标现在默认是关的，数字其实是跟在「首页」两个字后面，改成「后面」。
+                Caption("打开后底栏「首页」后面显示未读条数，最多 99+。")
+                Div()
+                SettingsRow(
+                    "阅读文章时也显示",
+                    trailing = { Switch(checked = showBarInReader, onCheckedChange = { vm.setShowBarInReader(it) }) }
+                )
+                Caption("关掉就是全屏沉浸阅读，只能靠返回键退出。")
             }
         }
 
-        // ==================== 4. 阅源与刷新 ====================
+        // ==================== 5. 阅源与刷新 ====================
         GroupTitle("阅源与刷新")
         Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
             Column {
@@ -1361,7 +1499,7 @@ fun SettingsScreen(
             }
         }
 
-        // ==================== 5. 离线阅读 ====================
+        // ==================== 6. 离线阅读 ====================
         GroupTitle("离线阅读")
         Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
             Column {
@@ -1440,7 +1578,7 @@ fun SettingsScreen(
             }
         }
 
-        // ==================== 6. 提醒与屏蔽 ====================
+        // ==================== 7. 提醒与屏蔽 ====================
         GroupTitle("提醒与屏蔽")
         Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
             Column {
@@ -1559,24 +1697,49 @@ fun SettingsScreen(
             }
         }
 
-        // ==================== 7. 数据 ====================
+        // ==================== 8. 数据 ====================
         GroupTitle("数据")
         Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
             Column {
+                // v2.11：分两小段 —— 「备份与迁移」是「把数据搬去别处」，
+                // 「存储与统计」是「这台机器上的东西」。原来五条平铺在一起，
+                // 「阅读统计」「缓存管理」夹在两条备份之间，找备份入口要先扫一遍。
+                //
+                // 行尾颜色也统一了：原来「云端备份」「订阅迁移」是主色、
+                // 另外三条是灰的，同一种「点进去」的行却两种色，看着像有的能点有的不能。
+                // 现在的规则是：主色只留给「动作文字」（去管理 / 换一批 / 点此开始），
+                // 这里五条都是「当前状态」的说明，一律用次要色。
+                SubTitle("备份与迁移")
                 SettingsRow(
                     "备份与恢复",
-                    trailing = { Text(summary.ifBlank { "订阅 / 收藏 / 笔记" }, color = cs.onSurfaceVariant) },
+                    trailing = { Text("导出 / 恢复", color = cs.onSurfaceVariant) },
                     onClick = { showBackup = true }
                 )
-                Caption("换手机、重装时导入这一个文件就够了。")
+                // v2.11：「本机现有 12 个阅源 · …」从行尾挪到这里。
+                // 行尾那块位置只装得下四五个字，这句有二十几个字，
+                // 挤在右边会折成两行、或者把标签压没（见 [SettingsRow] 的注释）。
+                // 说明本来就是放这种细节的地方，而且它是多行会长高的，不会破坏行高节奏。
+                Caption(
+                    buildString {
+                        if (summary.isNotBlank()) append("本机现有：$summary。\n")
+                        append("换手机、重装时导入这一个文件就够了。")
+                    }
+                )
                 Div()
                 SettingsRow(
                     "云端备份",
-                    trailing = { Text("Gist / 网盘 / 本地文件夹", color = cs.primary) },
+                    trailing = { Text("Gist / 网盘 / 本地文件夹", color = cs.onSurfaceVariant) },
                     onClick = { showCloud = true }
                 )
                 Caption("传到远端或别的文件夹，换机时不用先找到那个 JSON 文件。")
                 Div()
+                SettingsRow(
+                    "订阅迁移（OPML）",
+                    trailing = { Text("导出 / 导入订阅源", color = cs.onSurfaceVariant) },
+                    onClick = { showMigrate = true }
+                )
+                Div()
+                SubTitle("存储与统计")
                 SettingsRow(
                     "阅读统计",
                     trailing = { Text("已读 / 来源排行", color = cs.onSurfaceVariant) },
@@ -1588,16 +1751,10 @@ fun SettingsScreen(
                     trailing = { Text("图片 / 文章 / 正文", color = cs.onSurfaceVariant) },
                     onClick = onOpenStorage
                 )
-                Div()
-                SettingsRow(
-                    "订阅迁移（OPML）",
-                    trailing = { Text("导出 / 导入订阅源", color = cs.primary) },
-                    onClick = { showMigrate = true }
-                )
             }
         }
 
-        // ==================== 8. 帮助与关于 ====================
+        // ==================== 9. 帮助与关于 ====================
         GroupTitle("帮助与关于")
         Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
             Column {

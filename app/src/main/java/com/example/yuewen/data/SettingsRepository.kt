@@ -77,6 +77,20 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
     private val KEY_UNREAD_BADGE = booleanPreferencesKey("unread_badge")
 
     /**
+     * v2.11：底栏每一项是否显示图标。
+     *
+     * 默认 **false**，和 [KEY_UNREAD_BADGE] 是同一个理由的两种表现：
+     * 四个「图标 + 文字」并排时，图标的形状差异比文字大得多，一眼扫过去是四个
+     * 深浅不一的色块，反而比四个中文词更难认（「首页 / 闻件 / 阅源 / 设置」本身就是
+     * 两个字的短词，本来也不需要图标辅助）。去掉图标之后底栏收成四个等距的短词，
+     * 干净、也不挤。想要图标的人可以在设置里打开。
+     *
+     * ⚠️ 默认值只在**一处**决定（下面的 `barIconsFlow`）。UI 侧的 `YuewenBottomBar`
+     * 参数默认值跟着写 `false` 只是为了「没传就算关」，不要把它当成第二个真相来源。
+     */
+    private val KEY_BAR_ICONS = booleanPreferencesKey("bar_icons")
+
+    /**
      * v1.6：收藏夹的显示顺序。
      *
      * 收藏夹本身不是独立表，只是文章上的 folder 字段；
@@ -390,6 +404,9 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
     // ---- v1.6.1：未读数字徽标，默认关闭 ----
     val unreadBadgeFlow: Flow<Boolean> = dataStore.data.map { it[KEY_UNREAD_BADGE] ?: false }
 
+    // ---- v2.11：底栏图标，默认关闭（只留文字）----
+    val barIconsFlow: Flow<Boolean> = dataStore.data.map { it[KEY_BAR_ICONS] ?: false }
+
     // ---- v1.8：首页顶部筛选图标，默认显示 ----
     val homeFilterIconsFlow: Flow<Boolean> = dataStore.data.map { it[KEY_HOME_FILTER_ICONS] ?: true }
 
@@ -624,6 +641,7 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
     suspend fun setShowBarInReader(v: Boolean) = dataStore.edit { it[KEY_SHOW_BAR_IN_READER] = v }
     suspend fun setRefreshOnLaunch(v: Boolean) = dataStore.edit { it[KEY_REFRESH_ON_LAUNCH] = v }
     suspend fun setUnreadBadge(v: Boolean) = dataStore.edit { it[KEY_UNREAD_BADGE] = v }
+    suspend fun setBarIcons(v: Boolean) = dataStore.edit { it[KEY_BAR_ICONS] = v }
     suspend fun setHomeFilterIcons(v: Boolean) = dataStore.edit { it[KEY_HOME_FILTER_ICONS] = v }
 
     // ---- 收藏夹顺序 ----
@@ -806,6 +824,7 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
                     KEY_BLOCKED_SOURCES.name -> prefs[KEY_BLOCKED_SOURCES] = value
                     KEY_BLOCKED_KEYWORDS.name -> prefs[KEY_BLOCKED_KEYWORDS] = value
                     KEY_UNREAD_BADGE.name -> prefs[KEY_UNREAD_BADGE] = asBool(value)
+                    KEY_BAR_ICONS.name -> prefs[KEY_BAR_ICONS] = asBool(value)
                     KEY_HOME_FILTER_ICONS.name -> prefs[KEY_HOME_FILTER_ICONS] = asBool(value)
                     KEY_HOME_SHOW_LAYOUT.name -> prefs[KEY_HOME_SHOW_LAYOUT] = asBool(value)
                     KEY_HOME_SHOW_REFRESH.name -> prefs[KEY_HOME_SHOW_REFRESH] = asBool(value)
@@ -945,6 +964,9 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         KEY_APP_TITLE, KEY_ICON_NAME, KEY_SHARE_FOOTER,
         KEY_FOLDER_ORDER, KEY_RECENT, KEY_BLOCKED_SOURCES, KEY_BLOCKED_KEYWORDS,
         KEY_UNREAD_BADGE, KEY_HOME_FILTER_ICONS,
+        // v2.11：底栏图标开关。属于「一看就不对」的外观偏好 —— 换机后底栏突然
+        // 多出四个图标，用户会以为装成了另一个版本。
+        KEY_BAR_ICONS,
         KEY_HOME_SHOW_LAYOUT, KEY_HOME_SHOW_REFRESH, KEY_HOME_SHOW_SUBTITLE,
         KEY_SHOW_BAR_IN_READER, KEY_REFRESH_ON_LAUNCH, KEY_AUTOREAD, KEY_NOTIFY,
         KEY_PRELOAD_AUTO, KEY_PRELOAD_WIFI_ONLY, KEY_TTS_RATE, KEY_TTS_NOTIFY, KEY_REFRESH,

@@ -157,6 +157,10 @@ class SettingsViewModel(
     val unreadBadge: StateFlow<Boolean> = settings.unreadBadgeFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    // ---- v2.11：底栏图标（默认关闭，只留文字）----
+    val barIcons: StateFlow<Boolean> = settings.barIconsFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     // ---- v1.8：首页顶部筛选图标（默认显示）----
     val homeFilterIcons: StateFlow<Boolean> = settings.homeFilterIconsFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
@@ -300,6 +304,7 @@ class SettingsViewModel(
     fun setShowBarInReader(v: Boolean) = viewModelScope.launch { settings.setShowBarInReader(v) }
     fun setRefreshOnLaunch(v: Boolean) = viewModelScope.launch { settings.setRefreshOnLaunch(v) }
     fun setUnreadBadge(v: Boolean) = viewModelScope.launch { settings.setUnreadBadge(v) }
+    fun setBarIcons(v: Boolean) = viewModelScope.launch { settings.setBarIcons(v) }
     fun setHomeFilterIcons(v: Boolean) = viewModelScope.launch { settings.setHomeFilterIcons(v) }
 
     // ==================== v1.9：离线阅读 ====================

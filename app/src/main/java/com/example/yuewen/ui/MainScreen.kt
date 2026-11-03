@@ -180,6 +180,10 @@ fun MainScreen() {
     val showUnreadBadge by app.settingsRepository.unreadBadgeFlow
         .collectAsStateWithLifecycle(false)
 
+    // v2.11：底栏图标默认关（只留「首页 / 闻件 / 阅源 / 设置」四个短词），设置里可开
+    val showBarIcons by app.settingsRepository.barIconsFlow
+        .collectAsStateWithLifecycle(false)
+
     // 朗读状态：点底栏离开文章时用它决定要不要提示「还在后台念」
     val ttsSpeaking by app.tts.speaking.collectAsStateWithLifecycle()
     val ttsPaused by app.tts.paused.collectAsStateWithLifecycle()
@@ -403,6 +407,7 @@ fun MainScreen() {
                     goTo(tab)
                 },
                 unreadCount = if (showUnreadBadge) unread else 0,
+                showIcons = showBarIcons,
                 // v2.6.0：底栏不再收 `glass` —— 它按用户要求做成了「没有自己的底」，
                 // 玻璃开关从此只管首页顶栏和闻件标签栏。
                 modifier = Modifier.align(Alignment.BottomCenter)

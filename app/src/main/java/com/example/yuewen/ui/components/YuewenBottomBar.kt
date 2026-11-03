@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.exclude
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -126,6 +127,17 @@ fun YuewenBottomBar(
     pagerState: PagerState,
     onSelect: (Screen) -> Unit,
     unreadCount: Int = 0,
+    /**
+     * 每一项是否显示图标（v2.11）。
+     *
+     * 默认 **false**：四个「图标 + 文字」并排时图标形状差异太大，一眼扫过去是
+     * 四个深浅不一的色块，反而比四个中文短词更难认。去掉之后底栏是四个等距的词，
+     * 干净也不挤。开关在设置 →「底部导航栏」里，真相来源是 `SettingsRepository.barIconsFlow`。
+     *
+     * ⚠️ 这里的默认值只是「调用方没传就算关」，不要拿它当第二个真相来源 ——
+     * 真正的默认值写在 `barIconsFlow` 里，改一处即可。
+     */
+    showIcons: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val cs = MaterialTheme.colorScheme
@@ -241,6 +253,7 @@ fun YuewenBottomBar(
                     pillPosition = { pill.value },
                     index = index,
                     badge = if (item == Screen.Home) unreadCount else 0,
+                    showIcon = showIcons,
                     idleTint = pillIdle,
                     badgeIdle = badgeIdle,
                     onClick = { onSelect(item) },
@@ -272,6 +285,7 @@ private fun BarItem(
     pillPosition: () -> Float,
     index: Int,
     badge: Int,
+    showIcon: Boolean,
     idleTint: Color,
     badgeIdle: Color,
     onClick: () -> Unit,
@@ -306,17 +320,24 @@ private fun BarItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                // 图标 20dp 是这一行原本的高度来源。关掉图标之后文字只有 ~17dp，
+                // 若不兜一个下限，整条胶囊会跟着矮 3dp —— 而 MainScreen 里给页面留的
+                // 底部空档（BAR_INSET）是写死的常量，底栏高度忽高忽低会让「切换开关」
+                // 看起来像动了整页布局。所以这里锁一个 20dp 的下限，开关前后一样高。
+                .heightIn(min = 20.dp)
                 .padding(vertical = 4.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                item.icon,
-                contentDescription = item.label,
-                tint = tint,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(Modifier.width(5.dp))
+            if (showIcon) {
+                Icon(
+                    item.icon,
+                    contentDescription = item.label,
+                    tint = tint,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(5.dp))
+            }
             Text(
                 item.label,
                 fontSize = 12.5.sp,
