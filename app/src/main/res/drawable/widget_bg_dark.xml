@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 小组件底色（深色）。为什么要跟浅色分成两份，见 widget_bg_light.xml 的注释。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/widget_bg_dark" />
+    <corners android:radius="22dp" />
+</shape>

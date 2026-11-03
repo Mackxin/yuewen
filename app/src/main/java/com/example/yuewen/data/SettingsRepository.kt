@@ -7,14 +7,19 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.example.yuewen.data.backup.Remote
 import com.example.yuewen.data.model.FeedCatalog
 import com.example.yuewen.data.model.FeedSource
 import com.example.yuewen.data.model.sanitizeSources
+import com.example.yuewen.data.util.BackupSpan
+import com.example.yuewen.data.util.DailyDigest
 import com.example.yuewen.data.util.DEFAULT_HOME_KEYWORDS
 import com.example.yuewen.data.util.HomeRows
+import com.example.yuewen.data.util.WenjianTabs
 import com.example.yuewen.data.util.sanitizeKeywords
 import com.example.yuewen.ui.theme.DEFAULT_CUSTOM_HUE
 import com.example.yuewen.ui.theme.DEFAULT_CUSTOM_SAT
+import com.example.yuewen.ui.util.HomeSortMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -135,8 +140,24 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
     /** 首页顶栏是否显示副标题（「1分钟前 · N 未读」，默认显示）。 */
     private val KEY_HOME_SHOW_SUBTITLE = booleanPreferencesKey("home_show_subtitle")
 
-    /** 「闻件」页上次停留的子页（0 搜索 / 1 收藏 / 2 历史 / 3 笔记）。 */
+    /**
+     * 「闻件」页上次停留的子页。
+     *
+     * ⚠️ **v2.8：v2.8 起改读写下面那个 [KEY_WENJIAN_TAB2]，这个旧键只在升级时读一次。**
+     *
+     * 原因：v2.8 在「搜索」后面插入了一栏「稍后读」，五栏的下标变成
+     * `0 搜索 / 1 稍后读 / 2 收藏 / 3 历史 / 4 笔记`。
+     * 如果继续读旧键，一个上次停在「收藏」（存的是 1）的用户升级后会直接落到
+     * 「稍后读」栏 —— 内容全变了，而他什么都没点。
+     *
+     * 换键而不是原地改写：**「键存在」本身就是「已经迁移过」的标记**，
+     * 不需要再额外维护一个版本号，也不会出现「迁移脚本跑了两次」的问题。
+     * 旧键留在 DataStore 里不删，它不在 [BACKUP_KEYS] 白名单里，不会进备份。
+     */
     private val KEY_WENJIAN_TAB = intPreferencesKey("wenjian_tab")
+
+    /** v2.8 起的闻件页下标（五栏，含稍后读）。 */
+    private val KEY_WENJIAN_TAB2 = intPreferencesKey("wenjian_tab_v2")
 
     /** 朗读时是否发通知（锁屏 / 通知栏可暂停、停止、回到文章），默认开。 */
     private val KEY_TTS_NOTIFY = booleanPreferencesKey("tts_notify")
@@ -248,6 +269,97 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
     /** 首页是否显示关键词那一行（默认显示；一个词都没有时无论如何都不显示）。 */
     private val KEY_HOME_SHOW_KEYWORDS = booleanPreferencesKey("home_show_keywords")
 
+    // ==================== v2.8：稍后读队列 ====================
+
+    /**
+     * 队列的排序方向。
+     *
+     * 默认 **false = 先加入的排在最前面**，因为那才是「队列」这个词本身的语义
+     * （排在前面的先读）。想当成普通收藏夹那样看最新的人，可以切成 true。
+     *
+     * 用布尔值而不是字符串枚举：只有两个方向，多一个中间态没有意义，
+     * 而且布尔值在备份里天然是 "true"/"false"，不用写映射表。
+     */
+    private val KEY_QUEUE_NEWEST_FIRST = booleanPreferencesKey("queue_newest_first")
+
+    /**
+     * 打开队列里的文章后，是否自动把它移出队列。
+     *
+     * 默认 **true** —— 这是「稍后读」这种工具该有的行为：读过了就该从待办里消失，
+     * 否则队列会越堆越长，最后变成一个没人看的第二个收藏夹。
+     *
+     * 但「自动消失」天然会让人心里一咯噔，所以：
+     * 1. 详情页在移出时会弹一条 Snackbar 说明，**带「撤销」**；
+     * 2. 不想要这个行为的人可以在这里关掉，改成纯手动管理。
+     */
+    private val KEY_QUEUE_AUTO_DEQUEUE = booleanPreferencesKey("queue_auto_dequeue")
+
+    // ==================== v2.8：每日摘要 ====================
+
+    /**
+     * 要不要每天到点推一条「今日摘要」。
+     *
+     * 默认 **false**。和「稍后读读完自动出队」（默认 true）刚好相反，
+     * 理由也刚好相反：自动出队是**用户已经表达了意愿**（他用了队列）之后的行为微调；
+     * 而每日摘要是「App 主动找上门来」，属于必须用户点头才能做的事。
+     * 默认开着的话，装完当晚就会收到一条没人要求过的推送 —— 那不是功能，是骚扰。
+     */
+    private val KEY_DIGEST_ENABLED = booleanPreferencesKey("digest_enabled")
+
+    /**
+     * 推送时刻（时 / 分）。
+     *
+     * 拆成两个 int 而不是存 "08:00" 字符串：
+     * 拼接串要写解析，解析就要处理非法输入（手改的备份文件、旧格式），
+     * 每个解析点都是一个能崩的地方。分开存的话，
+     * 越界值在 [DailyDigest.sanitizeHour] / [sanitizeMinute] 一处夹住就完了。
+     */
+    private val KEY_DIGEST_HOUR = intPreferencesKey("digest_hour")
+    private val KEY_DIGEST_MINUTE = intPreferencesKey("digest_minute")
+
+    // ==================== v2.9：云备份 ====================
+
+    /**
+     * GitHub 个人访问令牌（只需要 `gist` 一个权限）。
+     *
+     * ⚠️ **刻意不进 [BACKUP_KEYS]**。备份文件本身可能被丢进网盘、发给自己、
+     * 甚至误发到群里 —— 把一个能代表用户身份去 GitHub 写数据的令牌一起打包进去，
+     * 等于「泄露一份备份 = 泄露一把钥匙」。用户在另一台机器上重新粘一次就好。
+     */
+    private val KEY_BACKUP_GIST_TOKEN = stringPreferencesKey("backup_gist_token")
+
+    /**
+     * 备份用的 Gist 标识。
+     *
+     * 这个**进备份**：它只是个 id，光有它什么都做不了（私密 Gist 也必须带令牌才能读），
+     * 但带上它换机才能无缝 —— 恢复完备份、重新粘一次令牌，就接着往原来那个 Gist 写，
+     * 而不是又新建一个（不然用户的 GitHub 上会攒出一串没人管的 Gist）。
+     */
+    private val KEY_BACKUP_GIST_ID = stringPreferencesKey("backup_gist_id")
+
+    /** WebDAV 根地址（如 `https://dav.jianguoyun.com/dav/yuewen`）。 */
+    private val KEY_BACKUP_DAV_URL = stringPreferencesKey("backup_dav_url")
+
+    /** WebDAV 账号。账号本身不是秘密，换机时省得重敲，所以进备份。 */
+    private val KEY_BACKUP_DAV_USER = stringPreferencesKey("backup_dav_user")
+
+    /** WebDAV 密码 / 应用授权码。⚠️ 和令牌同理，**不进备份**。 */
+    private val KEY_BACKUP_DAV_PASS = stringPreferencesKey("backup_dav_pass")
+
+    /**
+     * 本地备份目录的 SAF 授权 uri。
+     *
+     * ⚠️ **不进备份**：里面的 tree id 是本机存储卷的标识，
+     * 换设备后一定对不上，详见 `LocalBackup` 的类注释。
+     */
+    private val KEY_BACKUP_LOCAL_TREE = stringPreferencesKey("backup_local_tree")
+
+    /** 每个通道各保留最近几份。 */
+    private val KEY_BACKUP_KEEP = intPreferencesKey("backup_keep")
+
+    /** 上次成功备份的时刻（本机时间，用于设置页显示「上次备份：…」）。 */
+    private val KEY_BACKUP_LAST_AT = longPreferencesKey("backup_last_at")
+
     val themeFlow: Flow<String> = dataStore.data.map { it[KEY_THEME] ?: "system" }
     val fontFlow: Flow<String> = dataStore.data.map { it[KEY_FONT] ?: "standard" }
     val categoryFlow: Flow<String> = dataStore.data.map { it[KEY_CATEGORY] ?: "推荐" }
@@ -299,7 +411,15 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
     val homeShowLayoutFlow: Flow<Boolean> = dataStore.data.map { it[KEY_HOME_SHOW_LAYOUT] ?: true }
     val homeShowRefreshFlow: Flow<Boolean> = dataStore.data.map { it[KEY_HOME_SHOW_REFRESH] ?: true }
     val homeShowSubtitleFlow: Flow<Boolean> = dataStore.data.map { it[KEY_HOME_SHOW_SUBTITLE] ?: true }
-    val wenjianTabFlow: Flow<Int> = dataStore.data.map { it[KEY_WENJIAN_TAB] ?: 0 }
+    /**
+     * 闻件页当前子栏（0 搜索 / 1 稍后读 / 2 收藏 / 3 历史 / 4 笔记）。
+     *
+     * 换算规则收在 [WenjianTabs.resolve] 里 —— 它是纯函数，有离线断言钉着
+     * （这段升级路径本地重装时复现不出来，只能靠断言）。
+     */
+    val wenjianTabFlow: Flow<Int> = dataStore.data.map { prefs ->
+        WenjianTabs.resolve(prefs[KEY_WENJIAN_TAB2], prefs[KEY_WENJIAN_TAB])
+    }
     val ttsNotifyFlow: Flow<Boolean> = dataStore.data.map { it[KEY_TTS_NOTIFY] ?: true }
     val guideSeenFlow: Flow<Boolean> = dataStore.data.map { it[KEY_GUIDE_SEEN] ?: false }
 
@@ -381,6 +501,84 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
 
     val homeShowKeywordsFlow: Flow<Boolean> = dataStore.data.map { it[KEY_HOME_SHOW_KEYWORDS] ?: true }
 
+    // ---- v2.8：稍后读队列 ----
+
+    /** 队列是否「最新的排最前」。默认 false = 先加的排最前（队列语义）。 */
+    val queueNewestFirstFlow: Flow<Boolean> = dataStore.data.map { it[KEY_QUEUE_NEWEST_FIRST] ?: false }
+
+    /** 读完后是否自动出队。默认 true。 */
+    val queueAutoDequeueFlow: Flow<Boolean> = dataStore.data.map { it[KEY_QUEUE_AUTO_DEQUEUE] ?: true }
+
+    suspend fun setQueueNewestFirst(v: Boolean) = dataStore.edit { it[KEY_QUEUE_NEWEST_FIRST] = v }
+
+    suspend fun setQueueAutoDequeue(v: Boolean) = dataStore.edit { it[KEY_QUEUE_AUTO_DEQUEUE] = v }
+
+    // ---- v2.8：每日摘要 ----
+
+    val digestEnabledFlow: Flow<Boolean> = dataStore.data.map { it[KEY_DIGEST_ENABLED] ?: false }
+
+    // ⚠️ 读的时候就过一遍夹取，而不是只管写入端：老备份 / 手改过的 DataStore
+    // 里可能躺着 25 点这种值，读出口夹住才算真的防住。
+    val digestHourFlow: Flow<Int> = dataStore.data.map {
+        DailyDigest.sanitizeHour(it[KEY_DIGEST_HOUR] ?: DailyDigest.DEFAULT_HOUR)
+    }
+
+    val digestMinuteFlow: Flow<Int> = dataStore.data.map {
+        DailyDigest.sanitizeMinute(it[KEY_DIGEST_MINUTE] ?: DailyDigest.DEFAULT_MINUTE)
+    }
+
+    suspend fun setDigestEnabled(v: Boolean) = dataStore.edit { it[KEY_DIGEST_ENABLED] = v }
+
+    /** 时和分**一次写完**（同一个 edit）：分两次写会让订阅者看到一个半新半旧的时间。 */
+    suspend fun setDigestTime(hour: Int, minute: Int) = dataStore.edit {
+        it[KEY_DIGEST_HOUR] = DailyDigest.sanitizeHour(hour)
+        it[KEY_DIGEST_MINUTE] = DailyDigest.sanitizeMinute(minute)
+    }
+
+    // ---- v2.9：云备份 ----
+
+    /** GitHub 令牌（空 = 还没配）。 */
+    val backupGistTokenFlow: Flow<String> = dataStore.data.map { it[KEY_BACKUP_GIST_TOKEN] ?: "" }
+
+    /** 备份用的 Gist 标识（空 = 下次备份时新建一个）。 */
+    val backupGistIdFlow: Flow<String> = dataStore.data.map { it[KEY_BACKUP_GIST_ID] ?: "" }
+
+    val backupDavUrlFlow: Flow<String> = dataStore.data.map { it[KEY_BACKUP_DAV_URL] ?: "" }
+    val backupDavUserFlow: Flow<String> = dataStore.data.map { it[KEY_BACKUP_DAV_USER] ?: "" }
+    val backupDavPassFlow: Flow<String> = dataStore.data.map { it[KEY_BACKUP_DAV_PASS] ?: "" }
+    val backupLocalTreeFlow: Flow<String> = dataStore.data.map { it[KEY_BACKUP_LOCAL_TREE] ?: "" }
+
+    /**
+     * 每个通道保留几份。
+     *
+     * 读出口也夹一次（和 [KEY_DIGEST_HOUR] 同样的理由）：
+     * 备份文件是可以手改的，`keep = 0` 传进来会变成「备份完立刻删掉」。
+     */
+    val backupKeepFlow: Flow<Int> = dataStore.data.map {
+        BackupSpan.sanitizeKeep(it[KEY_BACKUP_KEEP] ?: BackupSpan.KEEP_DEFAULT)
+    }
+
+    /** 上次成功备份的时刻（0 = 从未备份过）。 */
+    val backupLastAtFlow: Flow<Long> = dataStore.data.map { it[KEY_BACKUP_LAST_AT] ?: 0L }
+
+    suspend fun setBackupGistToken(v: String) =
+        dataStore.edit { it[KEY_BACKUP_GIST_TOKEN] = Remote.normalizeToken(v) }
+
+    suspend fun setBackupGistId(v: String) = dataStore.edit { it[KEY_BACKUP_GIST_ID] = v.trim() }
+
+    suspend fun setBackupDavUrl(v: String) = dataStore.edit { it[KEY_BACKUP_DAV_URL] = v.trim() }
+
+    suspend fun setBackupDavUser(v: String) = dataStore.edit { it[KEY_BACKUP_DAV_USER] = v.trim() }
+
+    suspend fun setBackupDavPass(v: String) = dataStore.edit { it[KEY_BACKUP_DAV_PASS] = v.trim() }
+
+    suspend fun setBackupLocalTree(v: String) = dataStore.edit { it[KEY_BACKUP_LOCAL_TREE] = v }
+
+    suspend fun setBackupKeep(v: Int) =
+        dataStore.edit { it[KEY_BACKUP_KEEP] = BackupSpan.sanitizeKeep(v) }
+
+    suspend fun setBackupLastAt(ts: Long) = dataStore.edit { it[KEY_BACKUP_LAST_AT] = ts }
+
     /**
      * 加一个首页关键词。
      *
@@ -419,7 +617,7 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
     suspend fun setHomeShowLayout(v: Boolean) = dataStore.edit { it[KEY_HOME_SHOW_LAYOUT] = v }
     suspend fun setHomeShowRefresh(v: Boolean) = dataStore.edit { it[KEY_HOME_SHOW_REFRESH] = v }
     suspend fun setHomeShowSubtitle(v: Boolean) = dataStore.edit { it[KEY_HOME_SHOW_SUBTITLE] = v }
-    suspend fun setWenjianTab(v: Int) = dataStore.edit { it[KEY_WENJIAN_TAB] = v }
+    suspend fun setWenjianTab(v: Int) = dataStore.edit { it[KEY_WENJIAN_TAB2] = v.coerceIn(0, WenjianTabs.COUNT - 1) }
     suspend fun setTtsNotify(v: Boolean) = dataStore.edit { it[KEY_TTS_NOTIFY] = v }
     suspend fun setGuideSeen(v: Boolean) = dataStore.edit { it[KEY_GUIDE_SEEN] = v }
 
@@ -637,6 +835,40 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
                     KEY_HOME_KEYWORDS.name -> prefs[KEY_HOME_KEYWORDS] =
                         sanitizeKeywords(decodeList(value)).joinToString(":::")
                     KEY_HOME_SHOW_KEYWORDS.name -> prefs[KEY_HOME_SHOW_KEYWORDS] = asBool(value)
+                    // v2.8：稍后读队列的两个偏好
+                    KEY_QUEUE_NEWEST_FIRST.name -> prefs[KEY_QUEUE_NEWEST_FIRST] = asBool(value)
+                    KEY_QUEUE_AUTO_DEQUEUE.name -> prefs[KEY_QUEUE_AUTO_DEQUEUE] = asBool(value)
+                    // v2.8：每日摘要（开关 + 推送时刻）。时刻也照样夹一次 ——
+                    // 备份文件是可以手改的，25 点进来会把 nextDelayMillis 算到明天去。
+                    KEY_DIGEST_ENABLED.name -> prefs[KEY_DIGEST_ENABLED] = asBool(value)
+                    KEY_DIGEST_HOUR.name -> value.toIntOrNull()
+                        ?.let { prefs[KEY_DIGEST_HOUR] = DailyDigest.sanitizeHour(it) }
+                    KEY_DIGEST_MINUTE.name -> value.toIntOrNull()
+                        ?.let { prefs[KEY_DIGEST_MINUTE] = DailyDigest.sanitizeMinute(it) }
+                    // v2.9：云备份的「非秘密」部分。
+                    // ⚠️ 令牌（KEY_BACKUP_GIST_TOKEN）、WebDAV 密码（KEY_BACKUP_DAV_PASS）、
+                    // 本地目录授权 uri（KEY_BACKUP_LOCAL_TREE）**刻意不在这里** ——
+                    // 前两个是凭据，进了备份就等于「恢复一份别人的备份，
+                    // 把别人的密钥装到自己机器上」；第三个是本机存储卷的标识，换机必然失效。
+                    // 这三个键也不在 BACKUP_KEYS 白名单里，所以备份文件里根本不会出现它们。
+                    KEY_BACKUP_GIST_ID.name -> prefs[KEY_BACKUP_GIST_ID] = value
+                    KEY_BACKUP_DAV_URL.name -> prefs[KEY_BACKUP_DAV_URL] = value
+                    KEY_BACKUP_DAV_USER.name -> prefs[KEY_BACKUP_DAV_USER] = value
+                    KEY_BACKUP_KEEP.name -> value.toIntOrNull()
+                        ?.let { prefs[KEY_BACKUP_KEEP] = BackupSpan.sanitizeKeep(it) }
+                    // v2.10：补上三个「只导出、恢复时被丢掉」的键。
+                    //
+                    // 它们从 v2.0.2 / v2.2 起就写在 BACKUP_KEYS 白名单里（备份文件确实
+                    // 带着它们），但 applySettings 的 when 里一直缺分支 —— 于是恢复完
+                    // 用户会发现「默认浏览器、首页分类、首页排序」三项没回来，
+                    // 而备份文件里明明有值。这类不一致只在换机恢复时才暴露，所以补齐。
+                    KEY_BROWSER_PKG.name -> prefs[KEY_BROWSER_PKG] = value
+                    KEY_CATEGORY.name -> value.trim()
+                        .takeIf { it.isNotBlank() }?.let { prefs[KEY_CATEGORY] = it }
+                    // 合法性只由 HomeSortMode 一处决定，这里不另外维护一份档位列表；
+                    // 备份被手改成未知档位时 of() 会回落到「最新在前」。
+                    KEY_HOME_SORT.name -> value.takeIf { it.isNotBlank() }
+                        ?.let { prefs[KEY_HOME_SORT] = HomeSortMode.of(it).key }
                     KEY_REFRESH.name -> value.toIntOrNull()?.let { prefs[KEY_REFRESH] = it }
                 }
             }
@@ -732,7 +964,26 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         // 换设备丢掉的话用户会立刻发现外观变了。
         KEY_THEME_PALETTE, KEY_CUSTOM_HUE, KEY_CUSTOM_SAT,
         // v2.4：首页关键词。用户一个个敲进去的词，换手机不该重敲一遍。
-        KEY_HOME_KEYWORDS, KEY_HOME_SHOW_KEYWORDS
+        KEY_HOME_KEYWORDS, KEY_HOME_SHOW_KEYWORDS,
+        // v2.8：稍后读队列的「排序方向」和「读完自动出队」。
+        // 队列内容本身（queuedAt）跟着文章走，走的是 Backup 的 bookmarks 段，不在这里。
+        KEY_QUEUE_NEWEST_FIRST, KEY_QUEUE_AUTO_DEQUEUE,
+        // v2.8：每日摘要。开关和推送时刻都属于「个性化作息」，
+        // 换手机后不该重新设一遍（而且用户很可能想不起来自己设的是几点）。
+        KEY_DIGEST_ENABLED, KEY_DIGEST_HOUR, KEY_DIGEST_MINUTE,
+        // v2.9：云备份里「不是秘密」的那部分 —— Gist 标识、WebDAV 地址与账号、保留份数。
+        // 带上它们，换机后「恢复备份 → 重新粘一次令牌/密码」就能接着用原来的位置。
+        //
+        // ⚠️ 下面这三个键**刻意永远不进备份**，不要「顺手补上」：
+        //   · KEY_BACKUP_GIST_TOKEN —— 能代表用户去 GitHub 写数据的凭据；
+        //   · KEY_BACKUP_DAV_PASS  —— 网盘密码；
+        //   · KEY_BACKUP_LOCAL_TREE —— 本机存储卷的 SAF 标识，换设备必然失效。
+        // 备份文件本身会被丢进网盘、发给别人、甚至误发到群里，
+        // 把凭据一起打包进去 = 泄露一份备份就泄露一把钥匙。
+        //
+        // KEY_BACKUP_LAST_AT 同样不进：它是「本机上次备份的时刻」，
+        // 跟着备份跑到新机器上会显示成一个没发生过的日期。
+        KEY_BACKUP_GIST_ID, KEY_BACKUP_DAV_URL, KEY_BACKUP_DAV_USER, KEY_BACKUP_KEEP
     )
 
     private companion object {

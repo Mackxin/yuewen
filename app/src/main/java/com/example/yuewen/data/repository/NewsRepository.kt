@@ -11,6 +11,8 @@ import com.example.yuewen.data.model.ReadStatsCalc
 import com.example.yuewen.data.reader.ArticleExtractor
 import com.example.yuewen.data.rss.RawItem
 import com.example.yuewen.data.rss.RssFetcher
+import com.example.yuewen.data.util.DailyDigest.DigestFacts
+import com.example.yuewen.data.util.WidgetSnapshot
 import com.example.yuewen.data.util.likePattern
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -18,6 +20,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -48,6 +51,14 @@ class NewsRepository(
 
         /** 两篇之间的间隔。既给目标站点留口气，也让「取消」能较快生效。 */
         const val PRELOAD_GAP_MS = 150L
+
+        /**
+         * v2.8：每日摘要的展开态里最多列几条标题。
+         *
+         * 3 条是通知展开后**一次能看完**的量。列到 10 条时，通知会变成一个
+         * 需要滚动的列表 —— 那是打开 App 该干的事，不是通知该干的事。
+         */
+        const val DIGEST_TITLE_LIMIT = 3
     }
 
     /**
@@ -175,6 +186,44 @@ class NewsRepository(
 
     fun observeHistory(): Flow<List<Article>> = dao.observeHistory()
 
+    // ==================== v2.8：稍后读队列 ====================
+
+    /**
+     * 队列内容。
+     * @param newestFirst true = 最新加入的排最前；false = 先加入的排最前（默认，队列语义）
+     */
+    fun observeQueue(newestFirst: Boolean): Flow<List<Article>> =
+        if (newestFirst) dao.observeQueueNewestFirst() else dao.observeQueueFifo()
+
+    fun observeQueueCount(): Flow<Int> = dao.observeQueueCount()
+
+    /**
+     * 加入 / 移出队列。
+     *
+     * 加入时用的是**当前时间戳**（不是文章的 pubDate）—— 队列排的是
+     * 「我什么时候决定要读它」，和文章什么时候发布没关系。
+     */
+    suspend fun setQueued(link: String, value: Boolean) = withContext(Dispatchers.IO) {
+        dao.setQueued(link, if (value) System.currentTimeMillis() else 0L)
+    }
+
+    /** 这条现在在不在队列里（长按菜单 / 详情页按钮的当前态）。 */
+    suspend fun isQueued(link: String): Boolean = withContext(Dispatchers.IO) {
+        runCatching { (dao.getByLink(link)?.queuedAt ?: 0L) > 0L }.getOrDefault(false)
+    }
+
+    suspend fun clearQueue() = withContext(Dispatchers.IO) { runCatching { dao.clearQueue() } }
+
+    /** 清掉队列里已读完的，返回清掉几条。 */
+    suspend fun dequeueRead(): Int = withContext(Dispatchers.IO) {
+        runCatching { dao.dequeueRead() }.getOrDefault(0)
+    }
+
+    /** 备份用：整个稍后读队列。 */
+    suspend fun allQueued(): List<Article> = withContext(Dispatchers.IO) {
+        runCatching { dao.allQueued(1000) }.getOrDefault(emptyList())
+    }
+
     // v2.3：关键词一律先过 `likePattern()` 转义，再交给 DAO。
     // 直接 `"%$q%"` 的话，用户输入 `%` / `_` 会变成通配符 → 搜索命中全库。
     fun search(category: String, q: String): Flow<List<Article>> = dao.search(category, likePattern(q))
@@ -195,7 +244,31 @@ class NewsRepository(
 
     suspend fun setBookmarked(link: String, value: Boolean) = dao.setBookmarked(link, value)
 
-    suspend fun markRead(link: String) = dao.markRead(link, System.currentTimeMillis())
+    /**
+     * 标记已读（打开文章时触发）。
+     *
+     * ⚠️ v2.8：这里顺带处理「读完自动出队」。
+     *
+     * 为什么把出队挂在**这一条路径**上，而不是挂在「批量标为已读」上：
+     * - 打开一篇文章 = 用户确实读了它（`autoread` 开关就是干这个的）→ 该出队；
+     * - 「全部标为已读」是清理收件箱的动作，用户只是不想再看见那 200 条红的，
+     *   并没有读。如果那边也出队，一次误点就能把辛苦排好的队列清空一大半。
+     *
+     * 出队前先记下 `queuedAt` 并返回出去，**调用方靠它做「撤销」**——
+     * 一条东西自己从列表里消失而没有任何提示，是很吓人的。
+     */
+    suspend fun markRead(link: String): Long = withContext(Dispatchers.IO) {
+        val wasQueued = runCatching { dao.getByLink(link)?.queuedAt ?: 0L }.getOrDefault(0L)
+        dao.markRead(link, System.currentTimeMillis())
+        val auto = runCatching { settingsRepository.queueAutoDequeueFlow.first() }.getOrDefault(true)
+        if (auto && wasQueued > 0L) runCatching { dao.dequeue(link) }
+        if (auto) wasQueued else 0L
+    }
+
+    /** 撤销「读完自动出队」：把加入时间原样放回去（不是「重新加一次」，顺序不该变）。 */
+    suspend fun requeueAt(link: String, queuedAt: Long) = withContext(Dispatchers.IO) {
+        if (queuedAt > 0L) runCatching { dao.setQueued(link, queuedAt) }
+    }
 
     suspend fun setFolder(link: String, folder: String) = dao.setFolder(link, folder)
 
@@ -385,6 +458,45 @@ class NewsRepository(
         runCatching { dao.linksNeedingFullText(PRELOAD_LIMIT).size }.getOrDefault(0)
     }
 
+    // ==================== v2.8：每日摘要 ====================
+
+    /**
+     * 一次取齐摘要要用的四个数。
+     *
+     * 每个查询各自 `runCatching`：摘要是个「锦上添花」的后台任务，
+     * 某一个查询出意外（比如某天表被并发重建）不该让整条通知消失 ——
+     * 那天的摘要宁可少一个数字，也不该变成「设了 8 点却没收到」。
+     * 全都失败时退化成「什么都不推」（全 0 → buildContent 返回 null），也是可接受的结果。
+     */
+    suspend fun digestFacts(todayStartMs: Long): DigestFacts = withContext(Dispatchers.IO) {
+        DigestFacts(
+            todayCount = runCatching { dao.countPublishedSince(todayStartMs) }.getOrDefault(0),
+            unreadCount = runCatching { dao.unreadCount() }.getOrDefault(0),
+            queuedCount = runCatching { dao.queuedCount() }.getOrDefault(0),
+            topTitles = runCatching { dao.titlesPublishedSince(todayStartMs, DIGEST_TITLE_LIMIT) }
+                .getOrDefault(emptyList())
+        )
+    }
+
+    /**
+     * 桌面小组件要的数字（v2.9）。
+     *
+     * 和 [digestFacts] 一样，四个查询各自 `runCatching` ——
+     * 某一个查询出意外不该让整张卡片变成空白，宁可那个数字显示成 0。
+     *
+     * 「今天的起点」由调用方算好传进来（和每日摘要共用同一套时区算法），
+     * 这里不自己算：两个功能各算一套的话，会出现「通知说今天 3 条、卡片说 2 条」。
+     */
+    suspend fun widgetFacts(todayStartMs: Long): WidgetSnapshot.Facts = withContext(Dispatchers.IO) {
+        WidgetSnapshot.Facts(
+            unread = runCatching { dao.unreadCount() }.getOrDefault(0),
+            today = runCatching { dao.countPublishedSince(todayStartMs) }.getOrDefault(0),
+            queued = runCatching { dao.queuedCount() }.getOrDefault(0),
+            items = runCatching { dao.unreadItems(WidgetSnapshot.TITLE_LIMIT) }
+                .getOrDefault(emptyList())
+        )
+    }
+
     // ==================== v2.0：摘录 / 笔记 ====================
 
     fun observeNotes(): Flow<List<Note>> = noteDao.observeAll()
@@ -445,9 +557,15 @@ class NewsRepository(
             }
         }
 
-    /** 备份用：一次取回全部收藏（含阅读状态、收藏夹、进度）。 */
-    suspend fun allBookmarks(): List<Article> = withContext(Dispatchers.IO) {
-        runCatching { dao.allBookmarks(1000) }.getOrDefault(emptyList())
+    /**
+     * 备份用：一次取回全部「用户资产」= **收藏 ∪ 稍后读队列**。
+     *
+     * v2.8 之前这里叫 allBookmarks、只查 isBookmarked = 1。
+     * 队列是正交的新维度，继续只查收藏会让「加了稍后读但没收藏」的文章
+     * 整个漏出备份 —— 换机后才被发现，且没有任何报错。
+     */
+    suspend fun allSaved(): List<Article> = withContext(Dispatchers.IO) {
+        runCatching { dao.allSaved(1000) }.getOrDefault(emptyList())
     }
 
     /** 备份用：一次取回全部笔记。 */

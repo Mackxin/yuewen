@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  v2.9 桌面小组件 · 2×2「未读」卡片。
+
+  ⚠️ 布局里只用 FrameLayout / LinearLayout / TextView / ImageView 这四种。
+  原因：RemoteViews 在宿主进程里 inflate 这份布局，而它带了一个
+  「只允许 @RemoteView 注解过的类」的过滤器。`Space`、`ConstraintLayout`、
+  `View` 这些要么没注解、要么根本不在 androidx 的运行时里 ——
+  写进去的表现是**桌面卡片直接显示成一句错误文字**，而且因为是跑在 launcher 进程里，
+  logcat 里未必看得到自己 App 的堆栈。
+
+  ⚠️ 也不要在 XML 里写 `?attr/colorSurface` 之类的主题引用：
+  这份布局是拿 **launcher 的主题**解析的，不是 App 的 YuewenTheme，
+  取到的颜色完全不受控。所有颜色都由 Kotlin 侧显式 set 进来
+  （见 WidgetUpdater），两层深浅色各一套资源。
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!--
+      胶囊底。用 ImageView 而不是给根节点 setBackgroundResource：
+      `setImageViewResource` 是 RemoteViews 的**一等公民**方法，
+      而 `setInt(id, "setBackgroundResource", …)` 走的是反射白名单，
+      在 API 31+ 上方法没被 @RemotableViewMethod 标注就会被拦下来。
+      这里能稳稳地浅色/深色各切一张。
+    -->
+    <ImageView
+        android:id="@+id/widget_bg"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY"
+        android:importantForAccessibility="no" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:padding="14dp">
+
+        <TextView
+            android:id="@+id/widget_brand"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/widget_brand"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.08"
+            android:includeFontPadding="false" />
+
+        <!-- 上下两个可伸缩的空 LinearLayout：内容整体居中，
+             多出来的高度平均分给上下两边。高度不够时它们先缩到 0，不会挤掉正文。 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="vertical" />
+
+        <TextView
+            android:id="@+id/widget_count"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="36sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:includeFontPadding="false" />
+
+        <TextView
+            android:id="@+id/widget_count_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="@string/widget_unread"
+            android:textSize="11sp"
+            android:includeFontPadding="false" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="vertical" />
+
+        <TextView
+            android:id="@+id/widget_sub"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:textSize="11sp"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:includeFontPadding="false" />
+    </LinearLayout>
+</FrameLayout>

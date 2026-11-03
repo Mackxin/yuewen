@@ -26,10 +26,15 @@ import com.example.yuewen.data.util.asString
  * ```json
  * { "app":"yuewen", "version":1, "exportedAt":1690000000000,
  *   "sources":[{"id":"…","name":"…","url":"…","category":"…","enabled":true}],
- *   "bookmarks":[{"link":"…","title":"…",…}],
+ *   "bookmarks":[{"link":"…","title":"…","isBookmarked":true,"queuedAt":0,…}],
  *   "notes":[{"id":"…","link":"…","quote":"…","note":"…","createdAt":0}],
  *   "settings":{"theme":"dark","list_mode":"card"} }
  * ```
+ *
+ * ⚠️ v2.8：`bookmarks` 这个数组的名字保持不变（改名会让老版本读不了新文件），
+ * 但它现在装的是 **收藏 ∪ 稍后读队列** —— 单看队列里的文章并不带 `isBookmarked`，
+ * 旧的 `isBookmarked = 1` 那条查询会把它们整批漏掉。
+ * 数组里每条都显式写了 `isBookmarked` 和 `queuedAt`，恢复时按这两个字段还原。
  */
 object Backup {
 
@@ -81,6 +86,14 @@ object Backup {
                     "sourceName" to a.sourceName,
                     "category" to a.category,
                     "pubDate" to a.pubDate,
+                    // ⚠️ v2.8：`isBookmarked` 必须写出来。
+                    // 这个数组从 v2.8 起装的是**收藏 ∪ 稍后读**（见 ArticleDao.allSaved），
+                    // 恢复时若不区分，队列会被整体误判成收藏 —— 用户的队列会
+                    // 「换了个手机之后全变成收藏了」，而且队列本身反而空了。
+                    "isBookmarked" to a.isBookmarked,
+                    // ⚠️ v2.8：队列加入时间。**这是「稍后读」唯一的存储位置**，
+                    // 漏了它等于备份不带队列（用户换机后队列凭空清空）。
+                    "queuedAt" to a.queuedAt,
                     "isRead" to a.isRead,
                     "readAt" to a.readAt,
                     "folder" to a.folder,
@@ -157,7 +170,12 @@ object Backup {
                 sourceName = o["sourceName"]?.asString().orEmpty(),
                 category = o["category"]?.asString().orEmpty().ifBlank { "推荐" },
                 pubDate = o["pubDate"]?.asLongOr(0L) ?: 0L,
-                isBookmarked = true,
+                // ⚠️ 默认值 true 是**给老备份文件兜底**：
+                // v2.8 之前这个数组里装的确实全是收藏，字段也还没写出来。
+                // 所以「没有这个键」= 老文件 = 当收藏处理；只有明确写了 false 才算不是。
+                isBookmarked = o["isBookmarked"]?.asBooleanOr(true) ?: true,
+                // 老文件没有 queuedAt → 0（不在队列里），行为完全不变。
+                queuedAt = o["queuedAt"]?.asLongOr(0L) ?: 0L,
                 isRead = o["isRead"]?.asBooleanOr(false) ?: false,
                 readAt = o["readAt"]?.asLongOr(0L) ?: 0L,
                 folder = o["folder"]?.asString().orEmpty().ifBlank { "默认" },

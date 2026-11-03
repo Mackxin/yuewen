@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  2×2「未读」卡片的声明。
+
+  ⚠️ `minWidth/minHeight` 公式是 `(70 × 格数) − 30`：
+  2 格 → 110dp。写小了系统会按 1×1 的实际尺寸去渲染，内容被压扁；
+  写大了桌面只肯给 2×2 的位置，卡片右边会留一条空白。
+
+  `updatePeriodMillis="0"` 是**故意的**：系统最短只肯给到 30 分钟一次，
+  而且会顺带把设备唤醒，代价不小。我们的数字变化全部来自 App 内部
+  （刷新完、点已读、改收藏），由 App 自己 push 更新就够及时了（见 WidgetUpdater）。
+
+  targetCellWidth/Height、previewLayout、description 都是 API 31+ 的属性，
+  低版本会直接忽略 —— 不放到 xml-v31/ 里是为了避免两份文件以后走偏。
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:minWidth="110dp"
+    android:minHeight="110dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="110dp"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/widget_small"
+    android:previewLayout="@layout/widget_small"
+    android:previewImage="@mipmap/ic_launcher"
+    android:description="@string/widget_small_desc"
+    android:widgetCategory="home_screen"
+    tools:targetApi="31" />

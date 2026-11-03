@@ -422,6 +422,11 @@ class HomeViewModel(
         viewModelScope.launch { repo.setRead(link, value) }
     }
 
+    /** 加入 / 移出稍后读队列（长按菜单用，v2.8）。 */
+    fun toggleQueue(link: String, value: Boolean) {
+        viewModelScope.launch { runCatching { repo.setQueued(link, value) } }
+    }
+
     /** 移动到收藏夹（会自动顺带收藏，否则「移动」没有意义）。 */
     fun setFolder(link: String, folder: String, bookmark: Boolean = true) {
         viewModelScope.launch {

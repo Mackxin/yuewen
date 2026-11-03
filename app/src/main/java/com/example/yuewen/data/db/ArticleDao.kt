@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.example.yuewen.data.model.Article
 import com.example.yuewen.data.model.SourceCount
+import com.example.yuewen.data.util.WidgetSnapshot
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -23,10 +24,22 @@ interface ArticleDao {
     @Query("SELECT link FROM articles")
     suspend fun allLinks(): List<String>
 
-    /** 控制库大小：只保留最新的 N 条非收藏文章，保证列表查询始终很快。 */
+    /**
+     * 控制库大小：只保留最新的 N 条非收藏文章，保证列表查询始终很快。
+     *
+     * ⚠️ **v2.8：三条过滤条件里 `queuedAt = 0` 不能少。**
+     * 「稍后读」队列里的文章是用户**明确表态要读**的，它和收藏一样属于「用户资产」，
+     * 不该被「库太大，删点旧的」这种纯运维动作带走。少了这个条件，
+     * 队列里排到第 1500 条以外的文章会在某次刷新后**无声消失**，
+     * 而用户看到的现象只是「我明明加过的，怎么没了」。
+     *
+     * 子查询里也带上同样的条件：否则被队列保护的那些行会占掉 :keep 的名额，
+     * 使得真正被保留的普通文章变少（库会比预期小）。
+     */
     @Query(
-        "DELETE FROM articles WHERE isBookmarked = 0 AND link NOT IN " +
-                "(SELECT link FROM articles WHERE isBookmarked = 0 ORDER BY pubDate DESC LIMIT :keep)"
+        "DELETE FROM articles WHERE isBookmarked = 0 AND queuedAt = 0 AND link NOT IN " +
+                "(SELECT link FROM articles WHERE isBookmarked = 0 AND queuedAt = 0 " +
+                "ORDER BY pubDate DESC LIMIT :keep)"
     )
     suspend fun pruneTo(keep: Int)
 
@@ -56,6 +69,55 @@ interface ArticleDao {
 
     @Query("SELECT * FROM articles WHERE readAt > 0 ORDER BY readAt DESC LIMIT 300")
     fun observeHistory(): Flow<List<Article>>
+
+    // ==================== v2.8：稍后读队列 ====================
+    //
+    // 队列不是独立的一张表，只是 articles 上的 queuedAt 字段。
+    // 为什么不建表：队列条目和文章是**一对一**的，而且队列项必须能跟着文章一起
+    // 被刷新、被收藏、被打开 —— 拆成两张表之后每个读路径都要 join，
+    // 还会多出「文章被清了、队列里只剩个死链」这种状态。
+    //
+    // 两条查询的差别只在排序方向。做成两个方法而不是一个带方向的参数：
+    // Room 的 @Query 是编译期常量 SQL，排序方向拼不进参数。
+
+    /** 队列，**最新加入的排在最前**（和首页 / 收藏的时间序一致，符合大多数人的直觉）。 */
+    @Query("SELECT * FROM articles WHERE queuedAt > 0 ORDER BY queuedAt DESC LIMIT 500")
+    fun observeQueueNewestFirst(): Flow<List<Article>>
+
+    /**
+     * 队列，**先加入的排在最前**。
+     *
+     * 「队列」这个词本来的语义就是这个 —— 排在前面的先读。
+     * 所以这是默认顺序，[observeQueueNewestFirst] 是用户主动切的另一种看法。
+     */
+    @Query("SELECT * FROM articles WHERE queuedAt > 0 ORDER BY queuedAt ASC LIMIT 500")
+    fun observeQueueFifo(): Flow<List<Article>>
+
+    /** 队列长度（闻件页角标 / 小组件用）。 */
+    @Query("SELECT COUNT(*) FROM articles WHERE queuedAt > 0")
+    fun observeQueueCount(): Flow<Int>
+
+    /** 加入队列 / 改加入时间。传 0 即出队。 */
+    @Query("UPDATE articles SET queuedAt = :ts WHERE link = :link")
+    suspend fun setQueued(link: String, ts: Long)
+
+    /** 出队。 */
+    @Query("UPDATE articles SET queuedAt = 0 WHERE link = :link")
+    suspend fun dequeue(link: String)
+
+    @Query("UPDATE articles SET queuedAt = 0 WHERE queuedAt > 0")
+    suspend fun clearQueue()
+
+    /**
+     * 清掉队列里**已经读完**的（「清理已读」按钮）。
+     * 返回实际清掉几条，界面要拿这个数字做反馈。
+     */
+    @Query("UPDATE articles SET queuedAt = 0 WHERE queuedAt > 0 AND isRead = 1")
+    suspend fun dequeueRead(): Int
+
+    /** 备份用：整个队列（按加入顺序）。 */
+    @Query("SELECT * FROM articles WHERE queuedAt > 0 ORDER BY queuedAt ASC LIMIT :limit")
+    suspend fun allQueued(limit: Int = 1000): List<Article>
 
     // ⚠️ v2.3：两条搜索 SQL 都加了 `ESCAPE '\'`。
     // 配合 NewsRepository 里的 `likePattern()`（会把 `\` `%` `_` 转义一遍），
@@ -136,7 +198,11 @@ interface ArticleDao {
     @Query("UPDATE articles SET readAt = 0 WHERE readAt > 0")
     suspend fun clearHistory()
 
-    @Query("DELETE FROM articles WHERE isBookmarked = 0")
+    /**
+     * 清缓存：删掉全部非收藏文章。
+     * ⚠️ v2.8：同样要放过「稍后读」队列里的（用户点的是「清缓存」，不是「删我的队列」）。
+     */
+    @Query("DELETE FROM articles WHERE isBookmarked = 0 AND queuedAt = 0")
     suspend fun clearCache()
 
     /** 某分类下的全部链接（详情页「左右滑切换上下篇」用）。 */
@@ -146,6 +212,49 @@ interface ArticleDao {
     /** 未读总数（底部导航徽标用）。 */
     @Query("SELECT COUNT(*) FROM articles WHERE isRead = 0")
     fun observeUnreadCount(): Flow<Int>
+
+    // ==================== v2.8：每日摘要 ====================
+    //
+    // 这一组是**取数**用的：Worker 里没有 Flow 的订阅者，只能一次性读。
+    // 注意四个方法都刻意用 `suspend fun` 而不是返回 Flow —— 摘要是一次快照，
+    // 边推边变没有意义，反而会让「今天 N 条」在拼文案的过程中自己跳一个数。
+
+    /**
+     * 今天（`pubDate >= from`）发布了多少条。
+     *
+     * 按**发布时间**而不是入库时间：摘要是「今天有什么新闻」，
+     * 不是「今天我的 App 抓了几条」。少数源会把老文章翻上来重发，
+     * 那种情况用入库时间会虚高。
+     */
+    @Query("SELECT COUNT(*) FROM articles WHERE pubDate >= :from")
+    suspend fun countPublishedSince(from: Long): Int
+
+    /** 今天最新几条的标题（摘要通知的展开态用它）。 */
+    @Query("SELECT title FROM articles WHERE pubDate >= :from ORDER BY pubDate DESC LIMIT :limit")
+    suspend fun titlesPublishedSince(from: Long, limit: Int): List<String>
+
+    /** 未读总数的一次性读取（与 [observeUnreadCount] 同口径）。 */
+    @Query("SELECT COUNT(*) FROM articles WHERE isRead = 0")
+    suspend fun unreadCount(): Int
+
+    /** 稍后读队列长度的一次性读取（与 [observeQueueCount] 同口径）。 */
+    @Query("SELECT COUNT(*) FROM articles WHERE queuedAt > 0")
+    suspend fun queuedCount(): Int
+
+    /**
+     * 桌面小组件 4×2 上要显示的两条标题（v2.9）。
+     *
+     * 直接映射成 [WidgetSnapshot.Item]（纯数据类，两边共用同一个定义）——
+     * 不要在这里再声明一个只有 title/link 的类，那样文案规则一变就要改两处。
+     *
+     * `title != ''` 不能省：少数源会推来没有标题的条目，卡片上会变成一行空白，
+     * 看起来像「卡片坏了」。宁可多取一条把它顶掉。
+     */
+    @Query(
+        "SELECT title, link FROM articles WHERE isRead = 0 AND title != '' " +
+                "ORDER BY pubDate DESC LIMIT :limit"
+    )
+    suspend fun unreadItems(limit: Int): List<WidgetSnapshot.Item>
 
     /** 某个源已缓存的文章数（源管理里显示 / 删除前提示用）。 */
     @Query("SELECT COUNT(*) FROM articles WHERE sourceId = :id")
@@ -158,14 +267,24 @@ interface ArticleDao {
      * 而它早先抓下来的文章里存的还是旧 id —— 只按 id 删会留一地删不掉的孤儿缓存。
      * `:name <> ''` 这个条件不能省：名字为空时必须退化成「只按 id 删」，
      * 否则会把 sourceName 为空的历史文章一并清掉。
+     *
+     * v2.8：再加 `queuedAt = 0`。删掉一个阅源时，用户排进「稍后读」的文章
+     * 依然应该留着 —— 他表达的是「这篇我要读」，跟这个源还要不要订阅是两回事。
      */
     @Query(
-        "DELETE FROM articles WHERE isBookmarked = 0 " +
+        "DELETE FROM articles WHERE isBookmarked = 0 AND queuedAt = 0 " +
                 "AND (sourceId = :id OR (:name <> '' AND sourceName = :name))"
     )
     suspend fun deleteBySource(id: String, name: String)
 
-    @Query("SELECT COUNT(*) FROM articles WHERE isBookmarked = 0")
+    /**
+     * 「可以被清缓存清掉的」条数（设置页缓存管理里展示、以及点清理前提示用）。
+     *
+     * v2.8：跟随 [clearCache] 的口径一起排除收藏与队列 ——
+     * 否则界面会说「将清理 500 篇」，实际只删了 480 篇（差的那 20 篇是队列项），
+     * 数字对不上会让用户以为清缓存坏了。
+     */
+    @Query("SELECT COUNT(*) FROM articles WHERE isBookmarked = 0 AND queuedAt = 0")
     suspend fun cachedCount(): Int
 
     @Query("SELECT COUNT(*) FROM articles WHERE readAt > 0")
@@ -263,9 +382,22 @@ interface ArticleDao {
 
     // ==================== v2.0：备份 / 恢复 ====================
 
-    /** 备份用：一次性取出全部收藏（按时间倒序）。 */
-    @Query("SELECT * FROM articles WHERE isBookmarked = 1 ORDER BY pubDate DESC LIMIT :limit")
-    suspend fun allBookmarks(limit: Int = 1000): List<Article>
+    /**
+     * 备份用：一次性取出全部「用户资产」文章 = **收藏 ∪ 稍后读队列**。
+     *
+     * ⚠️ v2.8 的关键修正。以前这条只查 `isBookmarked = 1`，而 [Article.queuedAt]
+     * 是正交的新维度 —— 于是「加进稍后读但没收藏」的文章**不在备份里**。
+     * 这种丢失极其隐蔽：备份文件一切正常、恢复也不报错，
+     * 只是在换了手机之后，用户排了一半的队列莫名其妙少了一大截。
+     *
+     * 两个集合求并，交给调用方（Backup 导出）逐条写清楚 isBookmarked，
+     * 恢复时才能把「哪些是收藏、哪些只是队列」原样还回来。
+     */
+    @Query(
+        "SELECT * FROM articles WHERE isBookmarked = 1 OR queuedAt > 0 " +
+                "ORDER BY pubDate DESC LIMIT :limit"
+    )
+    suspend fun allSaved(limit: Int = 1000): List<Article>
 
     /**
      * 恢复备份：**REPLACE 语义**（与刷新用的 INSERT OR IGNORE 相反）。

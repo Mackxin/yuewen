@@ -97,8 +97,35 @@ class DetailViewModel(
         }
     }
 
-    fun markRead(link: String) {
-        viewModelScope.launch { repo.markRead(link) }
+    /**
+     * 打开文章时标记已读。
+     *
+     * v2.8：如果这篇本来在「稍后读」队列里、且用户开着「读完自动出队」，
+     * 它会顺便被移出队列 —— 这时把**原来的加入时间戳**回调出去，
+     * 界面要靠它弹一条带「撤销」的 Snackbar。
+     * 一条东西自己从列表里消失而没有任何提示，是会让人怀疑数据丢了的。
+     *
+     * @param onDequeued 参数 = 被移出那一条原来的 queuedAt（> 0 才回调）。
+     *   写成 suspend：界面要在回调里 `showSnackbar`（它本身是挂起函数，
+     *   要等用户点「撤销」或超时才返回）。传普通 lambda 的话界面得自己再套一层
+     *   `scope.launch`，多出来的那个协程和本页生命周期无关，反而更容易漏掉取消。
+     */
+    fun markRead(link: String, onDequeued: suspend (Long) -> Unit = {}) {
+        viewModelScope.launch {
+            val ts = runCatching { repo.markRead(link) }.getOrDefault(0L)
+            if (ts > 0L) onDequeued(ts)
+        }
+    }
+
+    /**
+     * 撤销「读完自动出队」。
+     *
+     * 注意传的是**原来那个时间戳**，不是「现在」——
+     * 队列是按加入时间排的，用新时间会把它甩到队尾，
+     * 而用户的心理预期是「撤销 = 回到刚才那样」。
+     */
+    fun undoDequeue(link: String, queuedAt: Long) {
+        viewModelScope.launch { runCatching { repo.requeueAt(link, queuedAt) } }
     }
 
     fun setRead(link: String, value: Boolean) {
@@ -107,6 +134,11 @@ class DetailViewModel(
 
     fun toggleBookmark(link: String, value: Boolean) {
         viewModelScope.launch { repo.setBookmarked(link, value) }
+    }
+
+    /** 加入 / 移出稍后读（v2.8）。 */
+    fun toggleQueue(link: String, value: Boolean) {
+        viewModelScope.launch { runCatching { repo.setQueued(link, value) } }
     }
 
     /** 保存阅读进度（千分比），下次打开这篇能接着读。 */

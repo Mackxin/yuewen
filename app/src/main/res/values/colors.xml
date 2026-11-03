@@ -21,4 +21,26 @@
       图标底色不跟随深色模式（始终是这块绿），所以 values-night 里不需要再写一份。
     -->
     <color name="ic_launcher_background">#0E9F76</color>
+
+    <!--
+      ============ 桌面小组件（v2.9）============
+
+      浅色 / 深色**两套都写在这个文件里**，values-night 里不再覆盖一份。
+      原因：小组件跟的是「App 内的主题设置」，而那个设置可以手动锁成浅色 ——
+      用户把 App 锁成浅色、系统是深色时，values-night 会把颜色整片带偏。
+      所以深浅两套都由 Kotlin 按当前生效值显式挑（见 WidgetUpdater）。
+
+      ⚠️ widget_text_* / widget_dim_* 要分别等于 Color.kt 里的
+      L_OnSurface / L_OnSurfaceVariant（深色同理）—— 
+      色号对不上的地方最难发现，改配色时记得两边一起动。
+    -->
+    <color name="widget_bg_light">#FFFFFF</color>
+    <color name="widget_text_light">#171D1A</color>
+    <color name="widget_dim_light">#55605A</color>
+    <color name="widget_accent_light">#0E9F76</color>
+
+    <color name="widget_bg_dark">#161C19</color>
+    <color name="widget_text_dark">#DEE4E0</color>
+    <color name="widget_dim_dark">#9BA8A1</color>
+    <color name="widget_accent_dark">#55D9B0</color>
 </resources>

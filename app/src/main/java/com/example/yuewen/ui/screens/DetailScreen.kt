@@ -5,11 +5,13 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -45,14 +47,19 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.WatchLater
 import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.WatchLater
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -60,6 +67,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -79,8 +90,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -89,8 +103,14 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -99,6 +119,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.core.view.WindowCompat
 import coil.compose.AsyncImage
+import com.example.yuewen.R
 import com.example.yuewen.YuewenApplication
 import com.example.yuewen.data.model.Article
 import com.example.yuewen.data.model.BodyBlock
@@ -113,6 +134,7 @@ import com.example.yuewen.ui.theme.ReaderSpacing
 import com.example.yuewen.ui.theme.ReaderTheme
 import com.example.yuewen.ui.theme.readerPalette
 import com.example.yuewen.ui.util.BrowserLauncher
+import com.example.yuewen.ui.util.FindInArticle
 import com.example.yuewen.ui.util.ShareCard
 import com.example.yuewen.ui.util.TtsChunker
 import com.example.yuewen.ui.util.TtsPiece
@@ -153,6 +175,116 @@ private fun ReaderTopBarDivider(inkVariant: Color) {
             .size(width = 1.dp, height = 16.dp)
             .background(inkVariant.copy(alpha = 0.3f))
     )
+}
+
+/**
+ * 文内查找条（v2.8）。整条顶替顶栏，高度与顶栏一致 ——
+ * 切换时不推挤下面的正文，视线也不会跳。
+ *
+ * 为什么用 [BasicTextField] 而不是 `OutlinedTextField`：
+ * 这一页整块用的是 [ReaderPalette]（米黄纸感 / 墨夜会整片变色），
+ * Material 的输入框自带描边和容器色，放进米黄纸面上会像贴上去的一块塑料。
+ */
+@Composable
+private fun ReaderFindBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    hitCount: Int,
+    hitPos: Int,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onClose: () -> Unit,
+    palette: ReaderPalette
+) {
+    val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    // 点开就聚焦并弹键盘 —— 用户点放大镜就是来打字的，不该还要再点一下输入框。
+    LaunchedEffect(Unit) { focus.requestFocus() }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(TOP_BAR_HEIGHT.dp)
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Outlined.Search,
+            contentDescription = null,
+            tint = palette.inkVariant,
+            modifier = Modifier.padding(start = 8.dp).size(19.dp)
+        )
+        Spacer(Modifier.width(8.dp))
+
+        BasicTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyMedium.copy(color = palette.ink),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            modifier = Modifier.weight(1f).focusRequester(focus),
+            decorationBox = { inner ->
+                Box(contentAlignment = Alignment.CenterStart) {
+                    if (query.isEmpty()) {
+                        Text(
+                            "在正文中查找…",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = palette.inkVariant.copy(alpha = 0.7f)
+                        )
+                    }
+                    inner()
+                }
+            }
+        )
+        Spacer(Modifier.width(6.dp))
+
+        // 计数。查询词为空时不占位（写「0 / 0」纯属噪音）；
+        // 有词但一条不中时说人话，别只说「0 / 0」。
+        if (query.isNotBlank()) {
+            Text(
+                if (hitCount > 0) "$hitPos / $hitCount" else "无匹配",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (hitCount > 0) palette.inkVariant else MaterialTheme.colorScheme.error
+            )
+            Spacer(Modifier.width(4.dp))
+        }
+
+        IconButton(onClick = onPrev, enabled = hitCount > 0, modifier = Modifier.size(36.dp)) {
+            Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "上一处", tint = palette.inkVariant)
+        }
+        IconButton(onClick = onNext, enabled = hitCount > 0, modifier = Modifier.size(36.dp)) {
+            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "下一处", tint = palette.inkVariant)
+        }
+        IconButton(
+            onClick = {
+                keyboard?.hide()
+                onClose()
+            },
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(Icons.Filled.Close, contentDescription = "关闭查找", tint = palette.inkVariant)
+        }
+    }
+}
+
+/**
+ * 把 [text] 里所有命中 [query] 的地方刷上底色，其余原样。
+ *
+ * 只在**当前命中的那一段**上调用（正文别的段落不做处理）——
+ * 一整篇都去 buildAnnotatedString 会白白多出几百个对象。
+ */
+private fun markQuery(text: String, query: String, mark: Color): AnnotatedString {
+    val ranges = FindInArticle.ranges(text, query)
+    if (ranges.isEmpty()) return AnnotatedString(text)
+    return buildAnnotatedString {
+        var cursor = 0
+        ranges.forEach { r ->
+            if (r.first > cursor) append(text.substring(cursor, r.first))
+            withStyle(SpanStyle(background = mark)) { append(text.substring(r.first, r.last + 1)) }
+            cursor = r.last + 1
+        }
+        if (cursor < text.length) append(text.substring(cursor))
+    }
 }
 
 private fun shareArticle(context: Context, link: String, title: String) {
@@ -258,10 +390,29 @@ fun DetailScreen(
     val currentArticle by remember(currentLink) { vm.observe(currentLink) }
         .collectAsStateWithLifecycle(null)
 
-    // 打开文章自动标为已读
+    // 打开文章自动标为已读。
+    //
+    // v2.8：如果这篇在「稍后读」里、且开着「读完自动出队」，repo 会顺手把它移出队列
+    // 并把原来的加入时间戳回调回来 —— 这里弹一条带「撤销」的提示。
+    // 没有这条提示的话，用户回到队列页会发现少了一条却不知道为什么，很像是 bug。
+    val snackbarHost = remember { SnackbarHostState() }
+    val dequeuedMsg = stringResource(R.string.queue_auto_dequeued)
     LaunchedEffect(currentArticle?.link, currentArticle?.isRead) {
         val a = currentArticle
-        if (autoread && a != null && !a.isRead) vm.markRead(a.link)
+        if (autoread && a != null && !a.isRead) {
+            vm.markRead(a.link) { wasQueuedAt ->
+                // showSnackbar 是挂起函数：等用户点了「撤销」或超时才返回
+                val acted = snackbarHost.showSnackbar(
+                    message = dequeuedMsg,
+                    actionLabel = context.getString(R.string.action_undo),
+                    duration = SnackbarDuration.Short
+                )
+                if (acted == SnackbarResult.ActionPerformed) {
+                    vm.undoDequeue(a.link, wasQueuedAt)
+                    Toast.makeText(context, context.getString(R.string.queue_undo_done), Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
 
     // ---------------- 朗读段落序列 ----------------
@@ -343,6 +494,45 @@ fun DetailScreen(
         out
     }
 
+    // ---------------- v2.8：文内查找 ----------------
+    //
+    // 命中的**段号**直接复用 [speakParas] 那一套编号（0 = 标题，1.. = 正文文本段）。
+    // 这不是图省事：朗读跟随、大纲跳转、这里的高亮，三处必须用同一把尺子，
+    // 否则「搜到点下去跳到别的地方」这种错位是必然的。
+    //
+    // 跳转也是复用大纲那条通道（jumpPara）—— DetailPage 里已经有
+    // 「等段落坐标 → animateScrollTo」的完整实现，包括布局晚一帧的兜底。
+    var findOpen by rememberSaveable { mutableStateOf(false) }
+    var findQuery by rememberSaveable { mutableStateOf("") }
+    var findPos by rememberSaveable { mutableIntStateOf(0) }
+
+    val findHits = remember(findQuery, speakParas) { FindInArticle.hits(speakParas, findQuery) }
+
+    // 关掉查找条就不高亮 —— 但查询词留着，下次打开还是上次那个词。
+    val findPara = if (findOpen) findHits.getOrNull(findPos) ?: -1 else -1
+
+    // 敲字时：回到第 1 条并滚过去。key 用 findHits 而不是 findQuery，
+    // 这样「查询词没变、但翻到了另一篇」也会重新定位一次。
+    LaunchedEffect(findHits, findOpen) {
+        if (!findOpen) return@LaunchedEffect
+        findPos = 0
+        findHits.firstOrNull()?.let { jumpPara = it }
+    }
+
+    /**
+     * 上一条 / 下一条。环绕 —— 到最后一条按「下一条」回到第一条，
+     * 而不是原地不动（原地不动看起来就像按钮坏了）。
+     */
+    fun stepFind(delta: Int) {
+        if (findHits.isEmpty()) return
+        val next = FindInArticle.step(findPos, delta, findHits.size)
+        findPos = next
+        jumpPara = findHits[next]
+    }
+
+    // 音量键之类不参与；这里只让系统返回键先关查找条，而不是直接退出阅读器。
+    BackHandler(enabled = findOpen) { findOpen = false }
+
     // ---------------- 分享卡片署名对话框 ----------------
     var showFooterDialog by remember { mutableStateOf(false) }
     var pendingCardArticle by remember { mutableStateOf<Article?>(null) }
@@ -366,293 +556,365 @@ fun DetailScreen(
         onDispose { controller?.isAppearanceLightStatusBars = !appDark }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(palette.background).statusBarsPadding()) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize().background(palette.background).statusBarsPadding()) {
 
-        // ---------------- 固定顶栏（不参与滚动，因此永远不会压住标题） ----------------
-        Surface(color = palette.background, modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(TOP_BAR_HEIGHT.dp)
-                    .padding(horizontal = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", tint = palette.ink)
-                }
-                if (links.size > 1 && currentIndex >= 0) {
-                    Text(
-                        "${currentIndex + 1} / ${links.size}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = palette.inkVariant
+            // ---------------- 固定顶栏（不参与滚动，因此永远不会压住标题） ----------------
+            //
+            // v2.8：查找条**整条顶替**顶栏，而不是并排挤进来。
+            // 顶栏 7 枚图标 + 返回 + 「N/M」在 360dp 屏上已经贴着边，
+            // 再往里塞一个输入框必然溢出；而查找本身是「临时进入的一种状态」，
+            // 顶替掉正好也告诉用户「你现在在找东西，不是在选择要读什么」。
+            Surface(color = palette.background, modifier = Modifier.fillMaxWidth()) {
+                if (findOpen) {
+                    ReaderFindBar(
+                        query = findQuery,
+                        onQueryChange = { findQuery = it },
+                        hitCount = findHits.size,
+                        hitPos = if (findHits.isEmpty()) 0 else findPos + 1,
+                        onPrev = { stepFind(-1) },
+                        onNext = { stepFind(1) },
+                        onClose = { findOpen = false },
+                        palette = palette
                     )
-                }
-                // v1.9：原来这里只是个 Spacer，现在它是一块「双击回到文章顶部」的空白区。
-                // currentIndex 是 Compose 状态（by remember），在回调里读到的永远是最新值，
-                // 不会像普通 var 那样被闭包捕获成旧值。
-                Box(
+                } else {
+                Row(
                     modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .pointerInput(Unit) {
-                            detectTapGestures(onDoubleTap = {
-                                pageScrolls[currentIndex]?.let { s ->
-                                    scope.launch { s.animateScrollTo(0) }
-                                }
-                            })
-                        }
-                )
-
-                // 文章大纲
-                IconButton(
-                    onClick = {
-                        showToc = !showToc
-                        if (showToc) showNotes = false
-                    },
-                    modifier = Modifier.size(38.dp)
+                        .fillMaxWidth()
+                        .height(TOP_BAR_HEIGHT.dp)
+                        .padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        Icons.AutoMirrored.Outlined.Toc,
-                        contentDescription = "文章大纲",
-                        tint = if (showToc) MaterialTheme.colorScheme.primary else palette.inkVariant
-                    )
-                }
-
-                // 本篇的摘录与笔记（有笔记时右上角挂个小数字）
-                Box {
-                    IconButton(
-                        onClick = {
-                            showNotes = !showNotes
-                            if (showNotes) showToc = false
-                        },
-                        modifier = Modifier.size(38.dp)
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Outlined.Notes,
-                            contentDescription = "摘录与笔记",
-                            tint = if (showNotes) MaterialTheme.colorScheme.primary else palette.inkVariant
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", tint = palette.ink)
+                    }
+                    if (links.size > 1 && currentIndex >= 0) {
+                        Text(
+                            "${currentIndex + 1} / ${links.size}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = palette.inkVariant
                         )
                     }
-                    if (notes.isNotEmpty()) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = CircleShape,
-                            modifier = Modifier.align(Alignment.TopEnd).padding(top = 1.dp, end = 1.dp)
+                    // v1.9：原来这里只是个 Spacer，现在它是一块「双击回到文章顶部」的空白区。
+                    // currentIndex 是 Compose 状态（by remember），在回调里读到的永远是最新值，
+                    // 不会像普通 var 那样被闭包捕获成旧值。
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .pointerInput(Unit) {
+                                detectTapGestures(onDoubleTap = {
+                                    pageScrolls[currentIndex]?.let { s ->
+                                        scope.launch { s.animateScrollTo(0) }
+                                    }
+                                })
+                            }
+                    )
+
+                    // 文章大纲
+                    IconButton(
+                        onClick = {
+                            showToc = !showToc
+                            if (showToc) showNotes = false
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Outlined.Toc,
+                            contentDescription = "文章大纲",
+                            tint = if (showToc) MaterialTheme.colorScheme.primary else palette.inkVariant
+                        )
+                    }
+
+                    // 本篇的摘录与笔记（有笔记时右上角挂个小数字）
+                    Box {
+                        IconButton(
+                            onClick = {
+                                showNotes = !showNotes
+                                if (showNotes) showToc = false
+                            },
+                            modifier = Modifier.size(36.dp)
                         ) {
-                            Text(
-                                if (notes.size > 99) "99+" else "${notes.size}",
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                            Icon(
+                                Icons.AutoMirrored.Outlined.Notes,
+                                contentDescription = "摘录与笔记",
+                                tint = if (showNotes) MaterialTheme.colorScheme.primary else palette.inkVariant
+                            )
+                        }
+                        if (notes.isNotEmpty()) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.primary,
+                                shape = CircleShape,
+                                modifier = Modifier.align(Alignment.TopEnd).padding(top = 1.dp, end = 1.dp)
+                            ) {
+                                Text(
+                                    if (notes.size > 99) "99+" else "${notes.size}",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // v2.8：文内查找。放在第 ① 组 ——
+                    // 「大纲」是纵向跳结构、「查找」是横向找词，两者都是「怎么定位到正文某处」，
+                    // 跟同一组的「摘录与笔记」是一家人；放进「对这篇做什么」（朗读/收藏）那一组就串味了。
+                    IconButton(
+                        onClick = { findOpen = true },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            Icons.Outlined.Search,
+                            contentDescription = "文内查找",
+                            tint = palette.inkVariant
+                        )
+                    }
+
+                    // v2.8：顶栏这 7 枚图标按语义切成三组 ——
+                    //   ① 怎么读（大纲 / 摘录笔记 / 文内查找）
+                    //   ② 对这篇做什么（朗读 / 收藏 / 稍后读）
+                    //   ③ 怎么显示（阅读排版）
+                    // 分组只靠这条细线，不动任何一枚的位置和点按区。
+                    ReaderTopBarDivider(palette.inkVariant)
+
+                    // 暂停 / 继续。只在「正在念的就是本篇」时出现。
+                    // TTS 引擎没有 pause API，这里是 stop + 记住片段位置 + 重发剩余片段凑出来的。
+                    if (playingHere) {
+                        IconButton(onClick = { tts.toggle() }, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                if (ttsPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                                contentDescription = if (ttsPaused) "继续朗读" else "暂停朗读",
+                                tint = MaterialTheme.colorScheme.primary
                             )
                         }
                     }
-                }
 
-                // v2.8：顶栏这 6 枚图标按语义切成三组 ——
-                //   ① 怎么读（大纲 / 笔记面板）
-                //   ② 对这篇做什么（朗读 / 收藏）
-                //   ③ 怎么显示与带走（字号 / 分享）
-                // 分组只靠这条细线，不动任何一枚的位置和点按区。
-                ReaderTopBarDivider(palette.inkVariant)
-
-                // 暂停 / 继续。只在「正在念的就是本篇」时出现。
-                // TTS 引擎没有 pause API，这里是 stop + 记住片段位置 + 重发剩余片段凑出来的。
-                if (playingHere) {
-                    IconButton(onClick = { tts.toggle() }, modifier = Modifier.size(38.dp)) {
-                        Icon(
-                            if (ttsPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                            contentDescription = if (ttsPaused) "继续朗读" else "暂停朗读",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-
-                // 朗读 / 停止
-                IconButton(onClick = {
-                    when {
-                        playingHere -> tts.stop()
-                        speakParas.isEmpty() -> Toast.makeText(
-                            context,
-                            "这篇文章没有可朗读的内容",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        else -> {
-                            // 每个段落独立切块：片段携带段落号，读到哪里正文跟到哪里
-                            val pieces: List<TtsPiece> = speakParas.flatMapIndexed { p, text ->
-                                TtsChunker.split(text).map { TtsPiece(p, it) }
-                            }
-                            when {
-                                pieces.isEmpty() -> Toast.makeText(
-                                    context, "这篇文章没有可朗读的内容", Toast.LENGTH_SHORT
-                                ).show()
-                                // 引擎没就绪：speak 返回 false，提示再点一次。
-                                // title 一起传过去 —— 后台悬浮条 / 通知栏要显示「正在念什么」。
-                                !tts.speak(pieces, currentLink, currentArticle?.title.orEmpty()) -> Toast.makeText(
-                                    context, "语音引擎还在准备中，请稍后再点一次", Toast.LENGTH_SHORT
-                                ).show()
+                    // 朗读 / 停止
+                    IconButton(onClick = {
+                        when {
+                            playingHere -> tts.stop()
+                            speakParas.isEmpty() -> Toast.makeText(
+                                context,
+                                "这篇文章没有可朗读的内容",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            else -> {
+                                // 每个段落独立切块：片段携带段落号，读到哪里正文跟到哪里
+                                val pieces: List<TtsPiece> = speakParas.flatMapIndexed { p, text ->
+                                    TtsChunker.split(text).map { TtsPiece(p, it) }
+                                }
+                                when {
+                                    pieces.isEmpty() -> Toast.makeText(
+                                        context, "这篇文章没有可朗读的内容", Toast.LENGTH_SHORT
+                                    ).show()
+                                    // 引擎没就绪：speak 返回 false，提示再点一次。
+                                    // title 一起传过去 —— 后台悬浮条 / 通知栏要显示「正在念什么」。
+                                    !tts.speak(pieces, currentLink, currentArticle?.title.orEmpty()) -> Toast.makeText(
+                                        context, "语音引擎还在准备中，请稍后再点一次", Toast.LENGTH_SHORT
+                                    ).show()
+                                }
                             }
                         }
+                    }, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            // 朗读 / 停止是**状态**图标：正在念的时候是实心 + 主色，
+                            // 所以它保留实心（和收藏一致）。没在念时用描边的喇叭。
+                            if (playingHere) Icons.Filled.Stop else Icons.AutoMirrored.Outlined.VolumeUp,
+                            contentDescription = if (playingHere) "停止朗读" else "朗读文章",
+                            tint = if (playingHere) MaterialTheme.colorScheme.primary else palette.inkVariant
+                        )
                     }
-                }, modifier = Modifier.size(38.dp)) {
-                    Icon(
-                        // 朗读 / 停止是**状态**图标：正在念的时候是实心 + 主色，
-                        // 所以它保留实心（和收藏一致）。没在念时用描边的喇叭。
-                        if (playingHere) Icons.Filled.Stop else Icons.AutoMirrored.Outlined.VolumeUp,
-                        contentDescription = if (playingHere) "停止朗读" else "朗读文章",
-                        tint = if (playingHere) MaterialTheme.colorScheme.primary else palette.inkVariant
-                    )
-                }
 
-                IconButton(onClick = {
-                    val a = currentArticle ?: return@IconButton
-                    vm.toggleBookmark(a.link, !a.isBookmarked)
-                }, modifier = Modifier.size(38.dp)) {
-                    Icon(
-                        if (currentArticle?.isBookmarked == true) Icons.Filled.Bookmark else Icons.Outlined.Bookmark,
-                        contentDescription = "收藏",
-                        tint = if (currentArticle?.isBookmarked == true) MaterialTheme.colorScheme.tertiary else palette.inkVariant
-                    )
-                }
-
-                // v2.8：分组线 2 —— 左边是「对这篇做什么」，右边是「怎么显示 / 怎么带走」
-                ReaderTopBarDivider(palette.inkVariant)
-
-                IconButton(onClick = { showTypePanel = !showTypePanel }, modifier = Modifier.size(38.dp)) {
-                    Icon(
-                        // 描边版：这一排里「实心」留给有状态的东西（收藏、正在朗读），
-                        // 字号面板本身没有状态可言，实心的 TT 只会平白加重一排的墨量。
-                        Icons.Outlined.FormatSize,
-                        contentDescription = "阅读排版",
-                        tint = if (showTypePanel) MaterialTheme.colorScheme.primary else palette.inkVariant
-                    )
-                }
-                IconButton(
-                    onClick = { currentArticle?.let { shareArticle(context, it.link, it.title) } },
-                    modifier = Modifier.size(38.dp)
-                ) {
-                    Icon(Icons.Outlined.Share, contentDescription = "分享", tint = palette.inkVariant)
-                }
-            }
-        }
-
-        // ---------------- 阅读排版面板 ----------------
-        if (showTypePanel) {
-            TypePanel(
-                sizeIndex = readerSizeIdx,
-                spacingKey = readerSpacingKey,
-                fontKey = readerFontKey,
-                themeKey = readerThemeKey,
-                rateIndex = ttsRateIdx,
-                onSize = { scope.launch { app.settingsRepository.setReaderSize(it) } },
-                onSpacing = { scope.launch { app.settingsRepository.setReaderSpacing(it) } },
-                onFont = { scope.launch { app.settingsRepository.setReaderFont(it) } },
-                onTheme = { scope.launch { app.settingsRepository.setReaderTheme(it) } },
-                onRate = { scope.launch { app.settingsRepository.setTtsRate(it) } }
-            )
-        }
-
-        // ---------------- v2.0：文章大纲 ----------------
-        if (showToc) {
-            TocPanel(
-                outline = outline,
-                onJump = { para ->
-                    jumpPara = para
-                    showToc = false
-                },
-                onClose = { showToc = false }
-            )
-        }
-
-        // ---------------- v2.0：本篇的摘录与笔记 ----------------
-        if (showNotes) {
-            NotesPanel(
-                notes = notes,
-                onAdd = {
-                    dialogNoteTarget = null
-                    dialogQuote = ""
-                    dialogNote = ""
-                    showNoteDialog = true
-                },
-                onEdit = { n ->
-                    dialogNoteTarget = n
-                    dialogQuote = n.quote
-                    dialogNote = n.note
-                    showNoteDialog = true
-                },
-                onDelete = { vm.deleteNote(it) },
-                onClose = { showNotes = false }
-            )
-        }
-
-        // ---------------- 正文：左右滑动切换上下篇 ----------------
-        if (links.isEmpty() || currentIndex < 0) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-            }
-        } else {
-            val pagerState = rememberPagerState(initialPage = currentIndex, pageCount = { links.size })
-
-            LaunchedEffect(pagerState) {
-                snapshotFlow { pagerState.currentPage }.collect { page ->
-                    if (page != currentIndex) {
-                        currentIndex = page
-                        // 在阅读器里翻到别的文章就停掉朗读，
-                        // 否则会「看着 B 的文章、听 A 的句子」。
-                        // 注意：这只是翻页；整个阅读器被关掉（切底栏）时不会走到这里，
-                        // 那种情况刻意不停 —— 用户就是要边听边逛。
-                        tts.stop()
+                    IconButton(onClick = {
+                        val a = currentArticle ?: return@IconButton
+                        vm.toggleBookmark(a.link, !a.isBookmarked)
+                    }, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            if (currentArticle?.isBookmarked == true) Icons.Filled.Bookmark else Icons.Outlined.Bookmark,
+                            contentDescription = "收藏",
+                            tint = if (currentArticle?.isBookmarked == true) MaterialTheme.colorScheme.tertiary else palette.inkVariant
+                        )
                     }
+
+                    // v2.8：稍后读。紧挨着「收藏」—— 它俩是同一类动作（把这篇文章收进我的库），
+                    // 而「大纲 / 笔记」是看内容、「字号」是调显示，本来就不该混在一组。
+                    val queued = (currentArticle?.queuedAt ?: 0L) > 0L
+                    IconButton(onClick = {
+                        val a = currentArticle ?: return@IconButton
+                        vm.toggleQueue(a.link, !queued)
+                        Toast.makeText(
+                            context,
+                            if (queued) "已移出稍后读" else "已加入稍后读",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            if (queued) Icons.Filled.WatchLater else Icons.Outlined.WatchLater,
+                            contentDescription = if (queued) "移出稍后读" else "加入稍后读",
+                            tint = if (queued) MaterialTheme.colorScheme.primary else palette.inkVariant
+                        )
+                    }
+
+                    // 分组线 2 —— 左边是「对这篇做什么」，右边是「怎么显示」
+                    ReaderTopBarDivider(palette.inkVariant)
+
+                    IconButton(onClick = { showTypePanel = !showTypePanel }, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            // 描边版：这一排里「实心」留给有状态的东西（收藏、稍后读、正在朗读），
+                            // 字号面板本身没有状态可言，实心的 TT 只会平白加重一排的墨量。
+                            Icons.Outlined.FormatSize,
+                            contentDescription = "阅读排版",
+                            tint = if (showTypePanel) MaterialTheme.colorScheme.primary else palette.inkVariant
+                        )
+                    }
+                    // v2.8：「分享」从顶栏挪到了**正文末尾的操作区**（「生成分享卡片」「原文」旁边）。
+                    // 理由：分享是「读完之后把这篇文章带走」，和底部那两个是同一类动作，
+                    // 挂在顶栏它反而是那一排里唯一的异类。空出来的这个位置给了「稍后读」。
+                    //
+                    // v2.8 又加了「文内查找」这一枚，所以现在是 7 枚。
+                    // 顶栏图标从 38dp 收到 36dp、行内边距从 6dp 收到 4dp ——
+                    // 两枚加起来抠出约 20dp，正好抵掉第 7 枚占掉的宽度，
+                    // 「双击空白回顶部」那块区域还剩 50dp 左右，仍然点得着。
+                    // （不这么做的话它会掉到 30dp 上下，双击基本就废了。）
+                }
                 }
             }
 
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize()
-            ) { page ->
-                DetailPage(
-                    vm = vm,
-                    link = links[page],
-                    // 这一页的滚动状态（由外层 Map 按 page 索引持有，顶栏双击回顶要读它）
-                    scroll = pageScrolls.getOrPut(page) { ScrollState(0) },
-                    isCurrent = page == pagerState.currentPage,
-                    hasSiblings = links.size > 1,
-                    palette = palette,
-                    font = font,
-                    spacing = spacing,
-                    bodySp = bodySp,
+            // ---------------- 阅读排版面板 ----------------
+            if (showTypePanel) {
+                TypePanel(
                     sizeIndex = readerSizeIdx,
-                    bottomInset = bottomInset,
-                    makingCard = makingCard,
-                    speakingPara = if (page == pagerState.currentPage) speakingPara else -1,
-                    // 大纲点击：只把请求交给「正在显示的那一页」，别的页不理会
-                    jumpPara = if (page == pagerState.currentPage) jumpPara else -1,
-                    onJumpHandled = { jumpPara = -1 },
-                    onQuote = { text ->
-                        // 长按某一段 → 直接把那段话预填进摘录框（还能再手动删改成想要的那半句）
+                    spacingKey = readerSpacingKey,
+                    fontKey = readerFontKey,
+                    themeKey = readerThemeKey,
+                    rateIndex = ttsRateIdx,
+                    onSize = { scope.launch { app.settingsRepository.setReaderSize(it) } },
+                    onSpacing = { scope.launch { app.settingsRepository.setReaderSpacing(it) } },
+                    onFont = { scope.launch { app.settingsRepository.setReaderFont(it) } },
+                    onTheme = { scope.launch { app.settingsRepository.setReaderTheme(it) } },
+                    onRate = { scope.launch { app.settingsRepository.setTtsRate(it) } }
+                )
+            }
+
+            // ---------------- v2.0：文章大纲 ----------------
+            if (showToc) {
+                TocPanel(
+                    outline = outline,
+                    onJump = { para ->
+                        jumpPara = para
+                        showToc = false
+                    },
+                    onClose = { showToc = false }
+                )
+            }
+
+            // ---------------- v2.0：本篇的摘录与笔记 ----------------
+            if (showNotes) {
+                NotesPanel(
+                    notes = notes,
+                    onAdd = {
                         dialogNoteTarget = null
-                        dialogQuote = text
+                        dialogQuote = ""
                         dialogNote = ""
                         showNoteDialog = true
                     },
-                    positionText = if (links.size > 1) "${currentIndex + 1} / ${links.size}" else "",
-                    onZoom = { delta ->
-                        val next = (readerSizeIdx + delta).coerceIn(0, ReaderSizes.lastIndex)
-                        if (next != readerSizeIdx) {
-                            scope.launch { app.settingsRepository.setReaderSize(next) }
-                        }
+                    onEdit = { n ->
+                        dialogNoteTarget = n
+                        dialogQuote = n.quote
+                        dialogNote = n.note
+                        showNoteDialog = true
                     },
-                    onShareCard = { a ->
-                        // 先让用户确认右下角署名，再生成（上次填的会预填）
-                        pendingCardArticle = a
-                        footerInput = savedFooter.ifBlank { ShareCard.DEFAULT_FOOTER }
-                        showFooterDialog = true
-                    },
-                    // v2.2：走用户选的浏览器（空 = 跟随系统）
-                    onOpenOriginal = { openOriginal(context, it, browserPkg) }
+                    onDelete = { vm.deleteNote(it) },
+                    onClose = { showNotes = false }
                 )
             }
+
+            // ---------------- 正文：左右滑动切换上下篇 ----------------
+            if (links.isEmpty() || currentIndex < 0) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                }
+            } else {
+                val pagerState = rememberPagerState(initialPage = currentIndex, pageCount = { links.size })
+
+                LaunchedEffect(pagerState) {
+                    snapshotFlow { pagerState.currentPage }.collect { page ->
+                        if (page != currentIndex) {
+                            currentIndex = page
+                            // 在阅读器里翻到别的文章就停掉朗读，
+                            // 否则会「看着 B 的文章、听 A 的句子」。
+                            // 注意：这只是翻页；整个阅读器被关掉（切底栏）时不会走到这里，
+                            // 那种情况刻意不停 —— 用户就是要边听边逛。
+                            tts.stop()
+                        }
+                    }
+                }
+
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize()
+                ) { page ->
+                    DetailPage(
+                        vm = vm,
+                        link = links[page],
+                        // 这一页的滚动状态（由外层 Map 按 page 索引持有，顶栏双击回顶要读它）
+                        scroll = pageScrolls.getOrPut(page) { ScrollState(0) },
+                        isCurrent = page == pagerState.currentPage,
+                        hasSiblings = links.size > 1,
+                        palette = palette,
+                        font = font,
+                        spacing = spacing,
+                        bodySp = bodySp,
+                        sizeIndex = readerSizeIdx,
+                        bottomInset = bottomInset,
+                        makingCard = makingCard,
+                        speakingPara = if (page == pagerState.currentPage) speakingPara else -1,
+                        // 查找命中同理：只高亮「正在显示的那一页」，
+                        // 否则滑到邻页会看到别篇文章上也亮着一块，很莫名其妙。
+                        findPara = if (page == pagerState.currentPage) findPara else -1,
+                        findQuery = findQuery,
+                        // 大纲点击：只把请求交给「正在显示的那一页」，别的页不理会
+                        jumpPara = if (page == pagerState.currentPage) jumpPara else -1,
+                        onJumpHandled = { jumpPara = -1 },
+                        onQuote = { text ->
+                            // 长按某一段 → 直接把那段话预填进摘录框（还能再手动删改成想要的那半句）
+                            dialogNoteTarget = null
+                            dialogQuote = text
+                            dialogNote = ""
+                            showNoteDialog = true
+                        },
+                        positionText = if (links.size > 1) "${currentIndex + 1} / ${links.size}" else "",
+                        onZoom = { delta ->
+                            val next = (readerSizeIdx + delta).coerceIn(0, ReaderSizes.lastIndex)
+                            if (next != readerSizeIdx) {
+                                scope.launch { app.settingsRepository.setReaderSize(next) }
+                            }
+                        },
+                        onShareCard = { a ->
+                            // 先让用户确认右下角署名，再生成（上次填的会预填）
+                            pendingCardArticle = a
+                            footerInput = savedFooter.ifBlank { ShareCard.DEFAULT_FOOTER }
+                            showFooterDialog = true
+                        },
+                        onShare = { a -> shareArticle(context, a.link, a.title) },
+                        // v2.2：走用户选的浏览器（空 = 跟随系统）
+                        onOpenOriginal = { openOriginal(context, it, browserPkg) }
+                    )
+                }
+            }
         }
+
+        // v2.8：读完自动出队时给一条「撤销」的后悔药。
+        // 浮在正文之上（不占 Column 的高度），所以弹出时正文不会跳一下。
+        // 底栏可见时 bottomInset > 0 —— 抬起来，别被胶囊挡住。
+        SnackbarHost(
+            hostState = snackbarHost,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 12.dp)
+                .padding(bottom = bottomInset + 16.dp)
+        )
     }
 
     // ---------------- 卡片署名编辑对话框 ----------------
@@ -788,6 +1050,13 @@ private fun DetailPage(
     bottomInset: Dp,
     makingCard: Boolean,
     speakingPara: Int,
+    /**
+     * v2.8：文内查找当前命中的段号；-1 = 没有（不在查找中 / 这一页不是当前页）。
+     * 就用 [speakParas] 那套编号：0 = 标题，1.. = 正文文本段。
+     */
+    findPara: Int,
+    /** v2.8：当前查找词。用来在命中的那一段里把词本身刷上底色。 */
+    findQuery: String,
     /** 大纲里点了「跳到第 N 段」；-1 = 没有待处理的跳转。 */
     jumpPara: Int,
     onJumpHandled: () -> Unit,
@@ -797,6 +1066,8 @@ private fun DetailPage(
     positionText: String,
     onZoom: (Int) -> Unit,
     onShareCard: (Article) -> Unit,
+    /** v2.8：分享这篇文章（从顶栏挪下来的，现在和「生成分享卡片 / 原文」并列）。 */
+    onShare: (Article) -> Unit,
     onOpenOriginal: (String) -> Unit
 ) {
     val cs = MaterialTheme.colorScheme
@@ -1034,6 +1305,22 @@ private fun DetailPage(
             // ---- 文本段号从 0 开始：0 = 标题，1.. = 正文段（与 speakParas 严格对齐）----
             val highlightBg = Modifier.background(palette.ink.copy(alpha = 0.09f), RoundedCornerShape(8.dp))
 
+            // v2.8：查找命中那一整段的底色。
+            // 刻意和朗读跟随的 [highlightBg] 长得不一样（主色淡底 vs 墨色淡底）：
+            // 两个高亮有可能同时存在（边听边找），同色的话就分不清哪个是哪个了。
+            val findBg = Modifier.background(cs.primary.copy(alpha = 0.16f), RoundedCornerShape(8.dp))
+
+            /**
+             * 命中段 → 词本身也刷底色；非命中段原样包一层。
+             *
+             * 返回 [AnnotatedString] 而不是 `CharSequence`：`Text` 只有
+             * `String` 和 `AnnotatedString` 两个重载，给个 `CharSequence` 是编不过的。
+             */
+            fun hitText(idx: Int, text: String): AnnotatedString =
+                if (findPara == idx && findQuery.isNotBlank()) {
+                    markQuery(text, findQuery, cs.primary.copy(alpha = 0.32f))
+                } else AnnotatedString(text)
+
             // v2.0：长按任意一段 → 摘录 / 写笔记。
             // 用 combinedClickable + indication = null 有两个理由：
             // ① 不要 Material 的涟漪 —— 一整段正文被点出一块灰底很难看；
@@ -1044,14 +1331,20 @@ private fun DetailPage(
             var hintOpen by rememberSaveable { mutableStateOf(false) }
 
             Text(
-                a.title,
+                hitText(0, a.title),
                 style = MaterialTheme.typography.titleLarge.copy(fontSize = 23.sp, lineHeight = 32.sp),
                 fontWeight = FontWeight.Bold,
                 fontFamily = font.family,
                 color = palette.ink,
                 modifier = Modifier
                     .onGloballyPositioned { paraCoords[0] = it }
-                    .then(if (isCurrent && speakingPara == 0) highlightBg else Modifier)
+                    .then(
+                        when {
+                            isCurrent && findPara == 0 -> findBg
+                            isCurrent && speakingPara == 0 -> highlightBg
+                            else -> Modifier
+                        }
+                    )
             )
             Spacer(Modifier.height(10.dp))
             Text(
@@ -1132,13 +1425,19 @@ private fun DetailPage(
                     is BodyBlock.Heading -> {
                         val idx = ++paraIdx
                         Text(
-                            block.text,
+                            hitText(idx, block.text),
                             style = headingStyle,
                             color = palette.ink,
                             modifier = Modifier
                                 .padding(top = 8.dp)
                                 .onGloballyPositioned { paraCoords[idx] = it }
-                                .then(if (isCurrent && speakingPara == idx) highlightBg else Modifier)
+                                .then(
+                                    when {
+                                        isCurrent && findPara == idx -> findBg
+                                        isCurrent && speakingPara == idx -> highlightBg
+                                        else -> Modifier
+                                    }
+                                )
                                 .combinedClickable(
                                     interactionSource = quoteInteraction,
                                     indication = null,
@@ -1151,12 +1450,18 @@ private fun DetailPage(
                     is BodyBlock.Paragraph -> {
                         val idx = ++paraIdx
                         Text(
-                            block.text,
+                            hitText(idx, block.text),
                             style = bodyStyle,
                             color = palette.ink,
                             modifier = Modifier
                                 .onGloballyPositioned { paraCoords[idx] = it }
-                                .then(if (isCurrent && speakingPara == idx) highlightBg else Modifier)
+                                .then(
+                                    when {
+                                        isCurrent && findPara == idx -> findBg
+                                        isCurrent && speakingPara == idx -> highlightBg
+                                        else -> Modifier
+                                    }
+                                )
                                 .combinedClickable(
                                     interactionSource = quoteInteraction,
                                     indication = null,
@@ -1194,7 +1499,7 @@ private fun DetailPage(
                 }
             }
 
-            // 读完之后的操作区：分享卡片 + 去浏览器看原文
+            // 读完之后的操作区：分享卡片 / 分享 / 去浏览器看原文（v2.8 起「分享」也在这里）
             Spacer(Modifier.height(22.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = { onShareCard(a) }, enabled = !makingCard) {
@@ -1211,8 +1516,19 @@ private fun DetailPage(
                         color = if (makingCard) palette.inkVariant.copy(alpha = 0.5f) else palette.inkVariant
                     )
                 }
-                if (a.link.isNotBlank()) {
+                Spacer(Modifier.width(4.dp))
+                TextButton(onClick = { onShare(a) }) {
+                    Icon(
+                        Icons.Outlined.Share,
+                        contentDescription = null,
+                        tint = palette.inkVariant,
+                        modifier = Modifier.size(15.dp)
+                    )
                     Spacer(Modifier.width(6.dp))
+                    Text("分享链接", style = MaterialTheme.typography.labelMedium, color = palette.inkVariant)
+                }
+                if (a.link.isNotBlank()) {
+                    Spacer(Modifier.width(4.dp))
                     TextButton(onClick = { onOpenOriginal(a.link) }) {
                         Icon(
                             Icons.AutoMirrored.Filled.OpenInNew,

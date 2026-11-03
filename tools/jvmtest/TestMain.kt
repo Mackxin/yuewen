@@ -1,4 +1,5 @@
 import com.example.yuewen.data.backup.Backup
+import com.example.yuewen.data.backup.Remote
 import com.example.yuewen.data.model.Article
 import com.example.yuewen.data.model.BodyBlock
 import com.example.yuewen.data.model.FeedCatalog
@@ -20,12 +21,16 @@ import com.example.yuewen.data.rss.normalizeRssHubPath
 import com.example.yuewen.data.rss.rssHubDefaultName
 import com.example.yuewen.data.rss.rssHubEncode
 import com.example.yuewen.data.rss.rssHubHost
+import com.example.yuewen.data.util.DailyDigest
+import com.example.yuewen.data.util.BackupSpan
 import com.example.yuewen.data.util.Json
 import com.example.yuewen.data.util.DEFAULT_HOME_KEYWORDS
 import com.example.yuewen.data.util.HOME_KEYWORD_LIMIT
 import com.example.yuewen.data.util.HOME_KEYWORD_MAX_LEN
 import com.example.yuewen.data.util.HomeRows
 import com.example.yuewen.data.util.LIKE_ESCAPE_CHAR
+import com.example.yuewen.data.util.WenjianTabs
+import com.example.yuewen.data.util.WidgetSnapshot
 import com.example.yuewen.data.util.asArray
 import com.example.yuewen.data.util.asBooleanOr
 import com.example.yuewen.data.util.asLongOr
@@ -40,6 +45,7 @@ import com.example.yuewen.ui.theme.generateScheme
 import com.example.yuewen.ui.theme.relativeLuminance
 import com.example.yuewen.ui.theme.rgbToHsl
 import com.example.yuewen.ui.theme.seedFor
+import com.example.yuewen.ui.util.FindInArticle
 import com.example.yuewen.ui.util.HomeSortMode
 import com.example.yuewen.ui.util.TtsChunker
 import com.example.yuewen.ui.util.sortArticles
@@ -1071,6 +1077,630 @@ fun main() {
     // 26. 液态玻璃数值层（v2.6 加，v2.7 删）
     // 用户看过实机效果后要求撤掉整套「液态玻璃」，Glass.kt 与这里的 14 条断言一并移除，
     // 断言总数 301 → 287。别再把这组加回来 —— 除非玻璃设计重新启用。
+
+    // ========================================================
+    // 27. 「闻件」页子栏下标换算（v2.8）
+    //
+    // v2.8 在「搜索」后面插了「稍后读」，后面三栏下标整体 +1。
+    // 这段换算是**升级路径**：只有「老用户带着旧偏好装上新版本」才会走到，
+    // 而开发时反复重装、偏好都是空的，本地怎么点都复现不出来。
+    // 所以只能靠这里钉死 —— 换算错了的表现是「升级后一打开闻件就停在别的栏上」，
+    // 而且只在老用户身上出现，事后极难定位。
+    // ========================================================
+    println()
+    println("== 27. 闻件页子栏换算（v2.8）==")
+
+    // ---- 老用户：只有旧键（新键 = null）----
+    check("27.01 旧值 0（搜索）原地不动", WenjianTabs.resolve(null, 0) == WenjianTabs.SEARCH)
+    check("27.02 旧值 1（原收藏）→ 落到新收藏，不是稍后读",
+        WenjianTabs.resolve(null, 1) == WenjianTabs.BOOKMARKS)
+    check("27.03 旧值 2（原历史）→ 落到新历史", WenjianTabs.resolve(null, 2) == WenjianTabs.HISTORY)
+    check("27.04 旧值 3（原笔记）→ 落到新笔记", WenjianTabs.resolve(null, 3) == WenjianTabs.NOTES)
+    // 这条是整段换算的核心风险点：插栏之后 1 是「稍后读」，
+    // 如果换算写成「原样返回」，老用户的收藏栏会变成空的稍后读栏。
+    check("27.05 任何旧值都不该被送到「稍后读」（那一栏对老用户是全新的）",
+        listOf(0, 1, 2, 3).none { WenjianTabs.resolve(null, it) == WenjianTabs.QUEUE })
+
+    // ---- 全新安装：两个键都没写过 ----
+    check("27.06 两个键都没有 → 搜索栏", WenjianTabs.resolve(null, null) == WenjianTabs.SEARCH)
+
+    // ---- 新键存在就盖过旧键（老偏好不再参与）----
+    check("27.07 新键写了就用新键，不看旧键",
+        WenjianTabs.resolve(WenjianTabs.NOTES, 0) == WenjianTabs.NOTES)
+    check("27.08 新键是 0 也算「写过」—— 不能因为像默认值就回退去读旧键",
+        WenjianTabs.resolve(0, 3) == WenjianTabs.SEARCH)
+
+    // ---- 脏数据兜底：越界一律夹回范围，绝不落到别的分支 ----
+    check("27.09 新键越界（99）夹到最后一栏", WenjianTabs.resolve(99, null) == WenjianTabs.NOTES)
+    check("27.10 新键是负数夹到第 0 栏", WenjianTabs.resolve(-3, null) == WenjianTabs.SEARCH)
+    check("27.11 旧键越界（99）也夹得住", WenjianTabs.resolve(null, 99) == WenjianTabs.NOTES)
+    check("27.12 旧键是负数夹到第 0 栏", WenjianTabs.resolve(null, -3) == WenjianTabs.SEARCH)
+
+    // ---- 常量与「标签表长度」的一致性 ----
+    // WenjianScreen.WENJIAN_TABS 是私有表、测试拿不到，所以退一步钉住数字本身。
+    // 以后再加栏时，这两条会和代码里的 COUNT 一起被改，改错就先在这里红掉。
+    check("27.13 COUNT = 5（与闻件页标签表长度一致）", WenjianTabs.COUNT == 5)
+    check("27.14 五个下标常量互不相同且都落在 0..COUNT-1",
+        setOf(
+            WenjianTabs.SEARCH, WenjianTabs.QUEUE, WenjianTabs.BOOKMARKS,
+            WenjianTabs.HISTORY, WenjianTabs.NOTES
+        ) == setOf(0, 1, 2, 3, 4))
+    check("27.15 默认栏位仍是最靠前的那个（常量顺序没被颠倒）",
+        WenjianTabs.SEARCH == 0 && WenjianTabs.NOTES == WenjianTabs.COUNT - 1)
+
+    // ========================================================
+    // 28. 备份里的「收藏 / 稍后读」（v2.8）
+    //
+    // `bookmarks` 这个数组从 v2.8 起装的是**收藏 ∪ 稍后读队列**。
+    // 名字没改（改名会让老版本读不了新文件），靠每条里显式写出的
+    // `isBookmarked` / `queuedAt` 两个字段来区分。
+    // 漏写任何一个字段 → 用户换机后「队列全变收藏、队列本身空了」，
+    // 而本机重装是复现不出来的（库是空的）。所以必须在这里钉住。
+    // ========================================================
+    println()
+    println("== 28. 备份的收藏 / 稍后读字段（v2.8）==")
+
+    val queuedOnly = Article(
+        link = "https://example.com/q1", title = "只在队列里", sourceName = "某源",
+        isBookmarked = false, queuedAt = 1_700_000_000_123L
+    )
+    val markedOnly = Article(
+        link = "https://example.com/b1", title = "只在收藏里", sourceName = "某源",
+        isBookmarked = true, queuedAt = 0L
+    )
+    val both = Article(
+        link = "https://example.com/bq", title = "既收藏又稍后读", sourceName = "某源",
+        isBookmarked = true, queuedAt = 1_600_000_000_000L
+    )
+    val bkRaw = Backup.export(
+        sources = emptyList(),
+        bookmarks = listOf(queuedOnly, markedOnly, both),
+        notes = emptyList(),
+        settings = emptyMap(),
+        now = 1L
+    )
+
+    // 「先确认字段真的写进了 JSON 文本」——
+    // 只测还原是不够的：导出端把 queuedAt 写成常量 0（或干脆不写）时，
+    // 还原端读到 0 也「能过」，两条一起错就互相掩盖了。
+    check("28.01 导出的 JSON 文本里有 isBookmarked 字段", bkRaw.contains("\"isBookmarked\""))
+    check("28.02 导出的 JSON 文本里有 queuedAt 字段", bkRaw.contains("\"queuedAt\""))
+    check("28.03 队列时间戳真的写进了文本里", bkRaw.contains("1700000000123"))
+
+    val bkBack = Backup.parse(bkRaw)
+    check("28.04 导出→导入能解析出 3 条", bkBack?.bookmarks?.size == 3, "实际 ${bkBack?.bookmarks?.size}")
+    val byLink = bkBack?.bookmarks.orEmpty().associateBy { it.link }
+    check("28.05 只入队的：queuedAt 保住、isBookmarked 仍是 false",
+        byLink["https://example.com/q1"]?.queuedAt == 1_700_000_000_123L &&
+            byLink["https://example.com/q1"]?.isBookmarked == false)
+    check("28.06 只收藏的：isBookmarked 保住、queuedAt 仍是 0",
+        byLink["https://example.com/b1"]?.isBookmarked == true &&
+            byLink["https://example.com/b1"]?.queuedAt == 0L)
+    check("28.07 既收藏又入队的：两个字段各自独立还原，不会被压成一个",
+        byLink["https://example.com/bq"]?.isBookmarked == true &&
+            byLink["https://example.com/bq"]?.queuedAt == 1_600_000_000_000L)
+
+    // ---- 老备份文件（v2.8 之前导出的：数组里只有收藏，两个新字段都不存在）----
+    // 期望：当成收藏（isBookmarked 默认 true），且不在队列里（queuedAt = 0）。
+    // 这两条是这个字段默认值的**唯一理由**，写反了老用户恢复备份会得到一队空收藏。
+    val legacyRaw = """
+        {"app":"yuewen","version":1,"exportedAt":1,
+         "sources":[],
+         "bookmarks":[{"link":"https://example.com/old","title":"老备份里的收藏"}],
+         "notes":[],"settings":{}}
+    """.trimIndent()
+    val legacyBundle = Backup.parse(legacyRaw)
+    check("28.08 老备份（没有 isBookmarked 键）→ 当作收藏",
+        legacyBundle?.bookmarks?.firstOrNull()?.isBookmarked == true)
+    check("28.09 老备份（没有 queuedAt 键）→ 不在队列里",
+        legacyBundle?.bookmarks?.firstOrNull()?.queuedAt == 0L)
+
+    // 显式写了 false 的，不能被「默认 true」的兜底顺手掰回 true
+    val explicitFalse = Backup.parse(
+        """{"app":"yuewen","version":1,"exportedAt":1,"sources":[],
+            "bookmarks":[{"link":"https://example.com/x","isBookmarked":false,"queuedAt":5}],
+            "notes":[],"settings":{}}""".trimIndent()
+    )
+    check("28.10 显式的 false 不会被兜底掰成 true",
+        explicitFalse?.bookmarks?.firstOrNull()?.isBookmarked == false &&
+            explicitFalse?.bookmarks?.firstOrNull()?.queuedAt == 5L)
+
+    // ========================================================
+    // 29. 文内查找（v2.8）
+    //
+    // 这一组钉的是**段号**与**下标运算**，它们是「搜索 → 高亮 + 跳转」三步共用的那把尺子：
+    // 段号算错 → 点「下一处」跳到别的段落；下标不环绕 → 到最后一条按钮像坏了。
+    // 纯字符串 / 纯数字，正好能离线跑完。
+    // ========================================================
+    println()
+    println("== 29. 文内查找（v2.8）==")
+
+    // 段号体系：0 = 标题，1.. = 正文文本段（图片不占号）
+    val paras = listOf(
+        "手机影像的下半场",          // 0 标题
+        "这几年手机拍照进步很快。",   // 1
+        "但是手机影像也有瓶颈。",     // 2
+        "瓶颈主要在传感器尺寸。",     // 3
+        "另一件事是算法。"            // 4
+    )
+
+    check("29.01 空查询返回空（不是命中全部）", FindInArticle.hits(paras, "").isEmpty())
+    check("29.02 只有空格也算空查询", FindInArticle.hits(paras, "   ").isEmpty())
+    check("29.03 命中的段号就是 speakParas 的下标（顺序 = 文档顺序）",
+        FindInArticle.hits(paras, "瓶颈") == listOf(2, 3))
+    check("29.04 标题也要能被搜到（标题是第 0 段）",
+        FindInArticle.hits(paras, "下半场") == listOf(0))
+    check("29.05 搜不到就是空，不是「第一个」", FindInArticle.hits(paras, "量子计算").isEmpty())
+    check("29.06 一段里出现多次只算一条命中（否则要按「第几处」跳同一段好几遍）",
+        FindInArticle.hits(listOf("手机和手机之间"), "手机") == listOf(0))
+    check("29.07 英文大小写不敏感",
+        FindInArticle.hits(listOf("iPhone 与 IPHONE"), "iphone") == listOf(0))
+    check("29.08 查询词两头的空格会被 trim（用户误按空格不该搜不到）",
+        FindInArticle.hits(paras, " 瓶颈 ") == listOf(2, 3))
+
+    // ---- 段内划线区间 ----
+    check("29.09 一段里的多处命中都划出来", FindInArticle.ranges("手机和手机", "手机") == listOf(0..1, 3..4))
+    check("29.10 区间含首含尾（endInclusive），不是半开区间",
+        FindInArticle.ranges("abcabc", "abc") == listOf(0..2, 3..5))
+    check("29.11 不重叠：不会在原地反复命中",
+        FindInArticle.ranges("aaaa", "aa") == listOf(0..1, 2..3))
+    check("29.12 没有命中就是空", FindInArticle.ranges("手机", "电脑").isEmpty())
+    check("29.13 空查询不产生区间（否则会画出整段的底色）", FindInArticle.ranges("手机", "").isEmpty())
+    check("29.14 大小写不敏感但要按原文切出来",
+        FindInArticle.ranges("Hello World", "world") == listOf(6..10))
+    // ⚠️ 这条是越界防护：查询词比正文长时，Naive 的 indexOf 循环会退化成负数长度 substring
+    check("29.15 查询词比整段还长 → 空，不炸",
+        FindInArticle.ranges("短", "很长的一段查询词").isEmpty())
+
+    // ---- 环形步进 ----
+    check("29.16 正常 +1", FindInArticle.step(0, 1, 5) == 1)
+    check("29.17 正常 -1", FindInArticle.step(3, -1, 5) == 2)
+    check("29.18 末尾 +1 绕回开头", FindInArticle.step(4, 1, 5) == 0)
+    check("29.19 开头 -1 绕到末尾（不是原地不动 —— 那看起来像按钮坏了）",
+        FindInArticle.step(0, -1, 5) == 4)
+    check("29.20 只有一条时怎么按都在原地", 
+        FindInArticle.step(0, 1, 1) == 0 && FindInArticle.step(0, -1, 1) == 0)
+    check("29.21 空结果集返回 0（调用方靠 hits 是否为空来决定按钮能不能点）",
+        FindInArticle.step(3, 1, 0) == 0)
+    check("29.22 越界入参也夹得住（脏状态兜底）", FindInArticle.step(99, 1, 5) == 0)
+
+    // ========================================================
+    // 30. 每日摘要（v2.8）
+    //
+    // 这一组要钉的是两件「只有第二天早上才会暴露」的事：
+    // ① 下一次该在什么时候跑 —— 算错的表现是「设了 8 点，第二天 9 点才响」
+    //    或者更糟：算成 0 毫秒 → Worker 立刻跑 → 又排下一次 → 又是一瞬间，
+    //    变成一秒内跑几十次的死循环（把电和流量烧光）；
+    // ② 这条通知该不该发 —— 算错的表现是每天准时响一声，点开发现什么都没有。
+    //
+    // 时区固定成 Asia/Shanghai（+08:00，中国无夏令时）以保证断言在任何机器上结果一致；
+    // 单独再补几条跨时区 / 跨月的用例，因为「今天」和「明天」都是按时区算的。
+    // ========================================================
+    println()
+    println("== 30. 每日摘要（v2.8）==")
+
+    val sh = ZoneId.of("Asia/Shanghai")
+
+    /** 造一个上海本地时间的时间戳，纯为了下面读起来像人话。 */
+    fun shAt(month: Int, day: Int, hour: Int, minute: Int, second: Int = 0): Long =
+        ZonedDateTime.of(2026, month, day, hour, minute, second, 0, sh).toInstant().toEpochMilli()
+
+    // ---- 30.1 时间文案 ----
+    check("30.01 补零成两位", DailyDigest.format(8, 0) == "08:00")
+    check("30.02 分也要补零", DailyDigest.format(21, 5) == "21:05")
+    check("30.03 越界的时/分会被夹回来（25:70 → 23:59）", DailyDigest.format(25, 70) == "23:59")
+    check("30.04 负数也夹得住（-1:-1 → 00:00）", DailyDigest.format(-1, -1) == "00:00")
+    check("30.05 夹取函数本身", DailyDigest.sanitizeHour(24) == 23 && DailyDigest.sanitizeMinute(-3) == 0)
+
+    // ---- 30.2 「今天 00:00」 ----
+    check("30.06 下午 15:30 的今天从当天 00:00 起",
+        DailyDigest.todayStart(shAt(10, 5, 15, 30), sh) == shAt(10, 5, 0, 0))
+    check("30.07 正好 00:00 就是自己", DailyDigest.todayStart(shAt(10, 5, 0, 0), sh) == shAt(10, 5, 0, 0))
+    check("30.08 00:00:00.001 还属于当天（不是前一天）",
+        DailyDigest.todayStart(shAt(10, 5, 0, 0) + 1, sh) == shAt(10, 5, 0, 0))
+    check("30.09 23:59 也属于当天", DailyDigest.todayStart(shAt(10, 5, 23, 59), sh) == shAt(10, 5, 0, 0))
+    check("30.10 换月没影响", DailyDigest.todayStart(shAt(11, 1, 3, 0), sh) == shAt(11, 1, 0, 0))
+    // 同一个绝对时刻，在 UTC 下「今天」的起点跟在上海下不是一回事 —— 这条证明
+    // todayStart 真的按传入时区算，而不是写死了 +08:00
+    check("30.11 时区是活的：纽约的今天起点 ≠ 上海的",
+        DailyDigest.todayStart(shAt(10, 5, 15, 30), sh) !=
+                DailyDigest.todayStart(shAt(10, 5, 15, 30), ZoneId.of("America/New_York")))
+
+    // ---- 30.3 下一次触发还有多久 ----
+    val hourMs = 3_600_000L
+    val dayMs = 24 * hourMs
+
+    check("30.12 7:00 时问 8:00 → 还有 1 小时",
+        DailyDigest.nextDelayMillis(shAt(10, 5, 7, 0), 8, 0, sh) == hourMs)
+    check("30.13 5:00 时问 8:00 → 还有 3 小时",
+        DailyDigest.nextDelayMillis(shAt(10, 5, 5, 0), 8, 0, sh) == 3 * hourMs)
+    check("30.14 9:00 时问 8:00 → 已经过了，算明天（23 小时）",
+        DailyDigest.nextDelayMillis(shAt(10, 5, 9, 0), 8, 0, sh) == 23 * hourMs)
+    // ⚠️ 这条是全组最要紧的一条：正好卡在目标时刻上必须给「明天」，
+    // 给 0 的话 Worker 会立刻跑 → 又排下一次 → 又是 0，一秒内转上百圈。
+    check("30.15 正好在目标时刻上 → 24 小时后，不是 0（防死循环）",
+        DailyDigest.nextDelayMillis(shAt(10, 5, 8, 0), 8, 0, sh) == dayMs)
+    check("30.16 过了目标 1 毫秒 → 还差 24 小时差 1 毫秒，不是 0",
+        DailyDigest.nextDelayMillis(shAt(10, 5, 8, 0) + 1, 8, 0, sh) == dayMs - 1)
+    check("30.17 23:00 时问 8:00 → 跨天，还有 9 小时",
+        DailyDigest.nextDelayMillis(shAt(10, 5, 23, 0), 8, 0, sh) == 9 * hourMs)
+    check("30.18 跨月：10-31 23:00 问 7:00 → 8 小时（落到 11-01）",
+        DailyDigest.nextDelayMillis(shAt(10, 31, 23, 0), 7, 0, sh) == 8 * hourMs)
+    check("30.19 跨年：12-31 23:00 问 8:00 → 9 小时（落到次年 1-1）",
+        DailyDigest.nextDelayMillis(shAt(12, 31, 23, 0), 8, 0, sh) == 9 * hourMs)
+    check("30.20 分钟也参与计算：7:30 问 8:15 → 45 分钟",
+        DailyDigest.nextDelayMillis(shAt(10, 5, 7, 30), 8, 15, sh) == 45 * 60_000L)
+    // ⚠️ 明天那一班必须是「本地日历 +1 天」再取时刻，不能用「今天那一班 + 24 小时」——
+    // 后者在有夏令时的时区会偏整整一个小时。中国没有夏令时，所以借纽约钉一下：
+    // 2026-03-08 是美国的夏令时切换日（凌晨 2 点直接跳到 3 点），
+    // 3-07 23:00 → 3-08 08:00 的真实间隔是 **8** 小时；
+    // 写成「todayAt + 24h」会算出 9 小时。
+    val ny = ZoneId.of("America/New_York")
+    val dstNow = ZonedDateTime.of(2026, 3, 7, 23, 0, 0, 0, ny).toInstant().toEpochMilli()
+    check("30.21 跨夏令时切换：3-07 23:00 问 08:00 的真实间隔是 8 小时（不是写死 +24h）",
+        DailyDigest.nextDelayMillis(dstNow, 8, 0, ny) == 8 * hourMs)
+    check("30.22 越界的目标时刻先被夹住再算（25:00 → 23:00）",
+        DailyDigest.nextDelayMillis(shAt(10, 5, 22, 0), 25, 0, sh) == hourMs)
+    check("30.23 结果恒为正（任何入参下都不会给出 0 或负数）",
+        listOf(
+            shAt(10, 5, 0, 0), shAt(10, 5, 8, 0), shAt(10, 5, 8, 0) + 1,
+            shAt(10, 5, 12, 0), shAt(10, 5, 23, 59)
+        ).all { DailyDigest.nextDelayMillis(it, 8, 0, sh) > 0L })
+
+    // ---- 30.4 预设时刻表 ----
+    check("30.24 预设有选项（设置页那排胶囊不能是空的）", DailyDigest.PRESETS.isNotEmpty())
+    check("30.25 预设按时间从早到晚排好序（界面上是顺的）",
+        DailyDigest.PRESETS == DailyDigest.PRESETS.sortedBy { (h, m) -> h * 60 + m })
+    // ⚠️ 必须加括号：`to` 的优先级比 `in` 低，不写括号会变成
+    // `HOUR to (MINUTE in PRESETS)`，类型对不上，直接编译失败。
+    check("30.26 默认时刻就在预设里（否则打开设置时一个胶囊都不亮，像坏了）",
+        (DailyDigest.DEFAULT_HOUR to DailyDigest.DEFAULT_MINUTE) in DailyDigest.PRESETS)
+    check("30.27 预设值合法且 format 可逆（不会出现 24:00 这种，也不会补零补错）",
+        DailyDigest.PRESETS.all { (h, m) ->
+            h in 0..23 && m in 0..59 &&
+                    DailyDigest.format(h, m).let { s ->
+                        s.length == 5 && s[2] == ':' &&
+                                s.substring(0, 2).toInt() == h && s.substring(3, 5).toInt() == m
+                    }
+        })
+
+    // ---- 30.5 该不该推 / 推什么 ----
+    fun facts(today: Int, unread: Int = 0, queued: Int = 0, titles: List<String> = emptyList()) =
+        DailyDigest.DigestFacts(today, unread, queued, titles)
+
+    check("30.28 今天没新内容、队列也空 → 不推（null）",
+        DailyDigest.buildContent(facts(0, unread = 0, queued = 0)) == null)
+    // ⚠️ 这条是刻意的产品决定：光有未读不算理由。库里躺着 200 篇没读是常态，
+    // 拿它当推送理由等于每天固定骚扰一次。
+    check("30.29 只有未读一堆、今天没新的 → 照样不推",
+        DailyDigest.buildContent(facts(0, unread = 240, queued = 0)) == null)
+    check("30.30 今天有新内容 → 推，并带上未读数",
+        DailyDigest.buildContent(facts(12, unread = 30))?.text == "今天 12 条新内容 · 未读 30 条")
+    check("30.31 今天有新内容且队列非空 → 队列优先播报（那才是要用户动手的事）",
+        DailyDigest.buildContent(facts(12, unread = 30, queued = 4))?.text ==
+                "今天 12 条新内容 · 队列里 4 篇待读")
+    check("30.32 今天没新的但队列压着 → 推，且说明今天没新的",
+        DailyDigest.buildContent(facts(0, unread = 5, queued = 3))?.text ==
+                "今天暂无新内容 · 队列里 3 篇待读")
+    check("30.33 标题固定是「今日摘要」",
+        DailyDigest.buildContent(facts(1))?.title == "今日摘要")
+
+    // 展开态
+    val withTitles = DailyDigest.buildContent(
+        facts(3, unread = 3, titles = listOf("标题甲", "标题乙", "标题丙"))
+    )
+    check("30.34 展开态里先说事、再列标题（换行分开）",
+        withTitles?.bigText == "今天 3 条新内容 · 未读 3 条\n\n· 标题甲\n· 标题乙\n· 标题丙")
+    check("30.35 折叠态只有那一行摘要，不带标题",
+        withTitles?.text == "今天 3 条新内容 · 未读 3 条")
+    check("30.36 没有标题时展开态就等于折叠态（不多出空行）",
+        DailyDigest.buildContent(facts(3, unread = 3))?.bigText == "今天 3 条新内容 · 未读 3 条")
+    check("30.37 空白标题会被丢掉，不留一行「· 」",
+        DailyDigest.buildContent(facts(1, titles = listOf("  ", "", "真标题")))?.bigText ==
+                "今天 1 条新内容 · 未读 0 条\n\n· 真标题")
+    check("30.38 标题两头的空格会 trim（RSS 里很常见）",
+        DailyDigest.buildContent(facts(1, titles = listOf("  带空格的标题  ")))?.bigText ==
+                "今天 1 条新内容 · 未读 0 条\n\n· 带空格的标题")
+    // 脏数据兜底：负数不是「不推」的理由，夹成 0 之后按正常分支走
+    check("30.39 负数入参不炸也不会算出「今天 -3 条」",
+        DailyDigest.buildContent(facts(-3, unread = -1, queued = 2))?.text ==
+                "今天暂无新内容 · 队列里 2 篇待读")
+
+    println("========== 31. 桌面小组件：数字写法与文案 ==========")
+
+    fun wf(
+        unread: Int = 0,
+        today: Int = 0,
+        queued: Int = 0,
+        items: List<WidgetSnapshot.Item> = emptyList()
+    ) = WidgetSnapshot.Facts(unread, today, queued, items)
+
+    fun item(t: String, l: String) = WidgetSnapshot.Item(t, l)
+
+    // ---- 31.1 大数字怎么写 ----
+    // 卡片宽度就那么点，五位数的处理方式是这块最容易「看起来没坏、其实很丑」的地方，
+    // 而桌面上很难把每种数量级都试一遍，所以全靠这里钉住。
+    check("31.01 三位数原样显示", WidgetSnapshot.count(176) == "176")
+    check("31.02 四位数还不到收成「万」的程度", WidgetSnapshot.count(9999) == "9999")
+    check("31.03 刚好一万从 10000 变成 1.0万", WidgetSnapshot.count(10_000) == "1.0万")
+    check("31.04 五位数保留一位小数", WidgetSnapshot.count(12_345) == "1.2万")
+    check("31.05 四舍五入到一位小数", WidgetSnapshot.count(19_960) == "2.0万")
+    check("31.06 到「百万」级别就丢掉小数（再留一位太长）", WidgetSnapshot.count(1_230_000) == "123万")
+    check("31.07 先四舍五入再决定写法，不会出现「100.0万」",
+        WidgetSnapshot.count(999_999) == "100万")
+    check("31.08 0 显示成 0，不是空字符串", WidgetSnapshot.count(0) == "0")
+    check("31.09 负数夹成 0（脏数据不该让卡片显示「-3」）", WidgetSnapshot.count(-5) == "0")
+    // ⚠️ 小数点必须是英文句点：`%.1f` 跟着系统 Locale 走的话，
+    // 某些语言环境下会写成「1,2万」，中文里读不通。
+    check("31.10 万位的小数点不受系统语言影响",
+        WidgetSnapshot.count(18_000) == "1.8万" && !WidgetSnapshot.count(18_000).contains(','))
+
+    // ---- 31.2 一行摘要 ----
+    check("31.11 今天有新的 + 队列有货 → 两个都报",
+        WidgetSnapshot.summary(wf(today = 3, queued = 5)) == "今日 3 条 · 队列 5 篇")
+    check("31.12 只有今天有新的", WidgetSnapshot.summary(wf(today = 3)) == "今日 3 条新内容")
+    check("31.13 只有队列有货", WidgetSnapshot.summary(wf(queued = 5)) == "队列 5 篇待读")
+    check("31.14 今天没新的但还有未读 → 明说今天没新的，而不是显示 0",
+        WidgetSnapshot.summary(wf(unread = 30)) == "今日暂无新内容")
+    check("31.15 一条未读都没有 → 说「都读完了」", WidgetSnapshot.summary(wf()) == "都读完了")
+    check("31.16 三个数全是负数也不会写出「今日 -2 条」",
+        WidgetSnapshot.summary(wf(unread = -1, today = -2, queued = -3)) == "都读完了")
+
+    // ---- 31.3 2×2 ----
+    val sm = WidgetSnapshot.small(wf(unread = 12_345, today = 3, queued = 5))
+    check("31.17 2×2 的大数字走同一套写法", sm.unreadText == "1.2万")
+    // 「阅闻」「未读」这两个固定文案在布局里（@string/widget_*），不归这里管 ——
+    // 所以这里只断言真正动态的那两行。
+    check("31.18 2×2 的副行就是摘要", sm.sub == "今日 3 条 · 队列 5 篇")
+    check("31.19 空库时 2×2 显示 0 而不是空白",
+        WidgetSnapshot.small(wf()).let { it.unreadText == "0" && it.sub == "都读完了" })
+
+    // ---- 31.4 4×2 ----
+    val wd = WidgetSnapshot.wide(
+        wf(
+            unread = 7,
+            items = listOf(item("  甲  ", "https://a"), item("乙", "https://b"), item("丙", "https://c"))
+        )
+    )
+    check("31.20 4×2 只取两条标题（第三行显示不下）",
+        wd.title1 == "甲" && wd.title2 == "乙")
+    check("31.21 标题两头的空格会 trim（RSS 里很常见）", wd.title1 == "甲")
+    check("31.22 两行都显示", wd.showTitle1 && wd.showTitle2)
+    check("31.23 每行标题带着自己的链接（点哪条进哪条）",
+        wd.link1 == "https://a" && wd.link2 == "https://b")
+    check("31.24 被裁掉的第三条不会漏进任何字段", wd.title1 != "丙" && wd.title2 != "丙")
+
+    val onlyOne = WidgetSnapshot.wide(wf(items = listOf(item("唯一一条", "https://x"))))
+    check("31.25 只有一条时第二行要隐藏，而不是留一行空白", onlyOne.showTitle1 && !onlyOne.showTitle2)
+    check("31.26 隐藏那行的文案是空串（配合 GONE，不能留出「null」）", onlyOne.title2 == "")
+    check("31.27 只有一条时它的链接照样带上", onlyOne.link1 == "https://x")
+
+    val none = WidgetSnapshot.wide(wf())
+    check("31.28 一条标题都没有时给引导语，而不是留白（留白看着像加载失败）",
+        none.title1 == WidgetSnapshot.EMPTY_HINT && none.showTitle1)
+    check("31.29 引导语不对应任何文章 → 没有链接（那一行只能打开 App）",
+        none.link1 == null && none.link2 == null)
+    check("31.30 没有条目时第二行同样隐藏", !none.showTitle2)
+
+    val blanks = WidgetSnapshot.wide(
+        wf(items = listOf(item("   ", "https://blank"), item("真标题", "https://real")))
+    )
+    check("31.31 空白标题被过滤掉，真标题顶上第一行",
+        blanks.title1 == "真标题" && blanks.link1 == "https://real")
+    check("31.32 过滤后只剩一条 → 第二行隐藏", !blanks.showTitle2)
+    check("31.33 取数上限就是 2（和布局里画的行数一致）", WidgetSnapshot.TITLE_LIMIT == 2)
+
+    // ==================================================================
+    println("========== 32. 云备份：文件名规则与两个远程通道 ==========")
+    // ==================================================================
+
+    val z = ZoneId.systemDefault()
+    fun at(y: Int, mo: Int, d: Int, h: Int, mi: Int, s: Int = 0): Long =
+        ZonedDateTime.of(y, mo, d, h, mi, s, 0, z).toInstant().toEpochMilli()
+
+    // ---- 32.1 文件命名 ----
+
+    val t0 = at(2026, 10, 5, 23, 10, 45)
+    check("32.01 时间戳固定 15 个字符（字典序能当时间序用的前提）",
+        BackupSpan.stamp(t0) == "20261005-231045")
+    check("32.02 文件名 = 前缀 + 时间戳 + .json",
+        BackupSpan.autoName(t0) == "yuewen-20261005-231045.json")
+    check("32.03 认得出自己的文件名",
+        BackupSpan.isOurs(BackupSpan.autoName(t0)))
+    // ⚠️ 这条是「本地文件夹」通道的保命断言：目录是用户自己选的，
+    // 光看前缀就认的话，用户存的 `yuewen-笔记.json` 会被当成过期备份删掉。
+    check("32.04 只有前缀对、格式不对的不算我们的（用户自己的文件不能被删）",
+        !BackupSpan.isOurs("yuewen-笔记.json") &&
+                !BackupSpan.isOurs("yuewen-备份.json") &&
+                !BackupSpan.isOurs("yuewen-.json"))
+    check("32.05 别的 App 的文件不算我们的",
+        !BackupSpan.isOurs("readwise-20261005.json") && !BackupSpan.isOurs("notes.txt"))
+    check("32.06 后缀必须正好是 .json",
+        !BackupSpan.isOurs("yuewen-20261005-231045.json.bak"))
+    check("32.07 取不出时间戳时返回 null", BackupSpan.stampOf("随便一个文件") == null)
+    check("32.08 展示用的时间去掉秒，只到分钟",
+        BackupSpan.displayOf("yuewen-20261005-231045.json") == "2026-10-05 23:10")
+    check("32.09 不是备份的名字没有展示时间",
+        BackupSpan.displayOf("yuewen-笔记.json") == null)
+
+    val n1 = BackupSpan.autoName(at(2026, 10, 5, 23, 10, 45))
+    val n2 = BackupSpan.autoName(at(2026, 10, 4, 9, 0, 0))
+    val n3 = BackupSpan.autoName(at(2026, 10, 6, 8, 30, 0))
+    check("32.10 列表按时间从新到旧",
+        BackupSpan.newestFirst(listOf(n2, n1, n3)) == listOf(n3, n1, n2))
+    // 跨月 / 跨年时字符串比较最容易和真实时间顺序分家 —— 这条专门钉住它。
+    val dec = BackupSpan.autoName(at(2026, 12, 31, 23, 59, 59))
+    val jan = BackupSpan.autoName(at(2027, 1, 1, 0, 0, 0))
+    check("32.11 跨年时字典序仍然等于时间序",
+        BackupSpan.stamp(at(2026, 12, 31, 23, 59, 59)) <
+                BackupSpan.stamp(at(2027, 1, 1, 0, 0, 0)))
+    check("32.12 跨年时排序也对", BackupSpan.newestFirst(listOf(dec, jan)) == listOf(jan, dec))
+    check("32.13 排序时会把非备份的文件筛掉",
+        BackupSpan.newestFirst(listOf("yuewen-笔记.json", n1, "a.txt")) == listOf(n1))
+    // 同一个秒里备份两次会生成同名文件；列表里真出现两份时不能多数掉一个名额。
+    check("32.14 重复出现的同一个名字只算一份", BackupSpan.newestFirst(listOf(n1, n1)).size == 1)
+
+    check("32.15 多于保留份数时，最旧的被挑出来删",
+        BackupSpan.toPrune(listOf(n3, n1, n2), keep = 2) == listOf(n2))
+    check("32.16 文件还不够保留份数时一个都不删",
+        BackupSpan.toPrune(listOf(n3, n1), keep = 5).isEmpty())
+    check("32.17 删的名单里绝不会出现用户的文件",
+        BackupSpan.toPrune(listOf("yuewen-笔记.json", n3, n1, n2), keep = 1)
+            .none { it == "yuewen-笔记.json" })
+    // 「保留 0 份」= 备份完立刻删掉自己，是一定要拦住的组合。
+    check("32.18 keep=0 被夹成 1，不会把最后一份也删掉",
+        BackupSpan.toPrune(listOf(n3, n1, n2), keep = 0) == listOf(n1, n2))
+    check("32.19 负数 keep 同样夹成 1",
+        BackupSpan.toPrune(listOf(n3, n1), keep = -3).size == 1)
+    check("32.20 keep 超过上限夹到 30", BackupSpan.sanitizeKeep(999) == BackupSpan.KEEP_MAX)
+    check("32.21 合法的 keep 原样返回", BackupSpan.sanitizeKeep(7) == 7)
+    check("32.22 keep 下限是 1", BackupSpan.KEEP_MIN == 1 && BackupSpan.KEEP_MAX == 30)
+    check("32.23 默认保留 5 份", BackupSpan.KEEP_DEFAULT == 5)
+    // 秒级精度：同一分钟内点两次备份，不能生成同一个名字（否则后一次静默覆盖前一次）。
+    check("32.24 同一分钟内的两次备份名字不同",
+        BackupSpan.autoName(at(2026, 10, 5, 23, 10, 0)) !=
+                BackupSpan.autoName(at(2026, 10, 5, 23, 10, 30)))
+    // 文件名要进 URL（WebDAV）和 JSON 键（Gist），非 ASCII 会逼着两边都去处理编码。
+    check("32.25 文件名全是 ASCII（进 URL / JSON 都不用再转义）",
+        BackupSpan.autoName(t0).all { it.code < 128 })
+
+    // ---- 32.2 认证 ----
+
+    val auth = Remote.basicAuth("me@example.com", "app-pass")
+    check("32.26 Basic 认证头以 'Basic ' 开头", auth.startsWith("Basic "))
+    check("32.27 认证头里没有明文密码", !auth.contains("app-pass"))
+    check("32.28 解码回来就是 用户名:密码",
+        String(
+            java.util.Base64.getDecoder().decode(auth.removePrefix("Basic ")),
+            Charsets.UTF_8
+        ) == "me@example.com:app-pass")
+    // ⚠️ 中文用户名/密码：如果按平台默认编码取字节，服务端按 UTF-8 解就会对不上，
+    // 而报错是 401 —— 看起来完全像密码敲错了。
+    val cnAuth = Remote.basicAuth("小明", "密码123")
+    check("32.29 中文账号密码也按 UTF-8 编（否则会莫名 401）",
+        String(
+            java.util.Base64.getDecoder().decode(cnAuth.removePrefix("Basic ")),
+            Charsets.UTF_8
+        ) == "小明:密码123")
+
+    check("32.30 令牌两头的空白会被去掉（复制粘贴最常见的脏东西）",
+        Remote.normalizeToken("  ghp_abc\n") == "ghp_abc")
+    check("32.31 连在一起的 'Bearer ' 也会去掉",
+        Remote.normalizeToken("Bearer ghp_abc") == "ghp_abc" &&
+                Remote.normalizeToken("bearer ghp_abc") == "ghp_abc")
+    check("32.32 干净的值原样不动", Remote.normalizeToken("ghp_abc") == "ghp_abc")
+
+    // ---- 32.3 地址拼接 ----
+
+    check("32.33 没写协议时补 https://",
+        Remote.normalizeBase("dav.example.com/dav") == "https://dav.example.com/dav")
+    // 局域网里的 NAS 经常没有证书，替用户「升级」成 https 会直接连不上。
+    check("32.34 用户明确写了 http:// 就保留",
+        Remote.normalizeBase("http://192.168.1.9:5005/dav") == "http://192.168.1.9:5005/dav")
+    check("32.35 末尾的斜杠会被去掉",
+        Remote.normalizeBase("https://dav.example.com/dav/") == "https://dav.example.com/dav")
+    check("32.36 两头空白会被去掉",
+        Remote.normalizeBase("  https://dav.example.com/dav  ") == "https://dav.example.com/dav")
+    check("32.37 空串判为非法", Remote.normalizeBase("   ") == null)
+    check("32.38 只有协议没有主机判为非法",
+        Remote.normalizeBase("https://") == null && Remote.normalizeBase("://x") == null)
+    check("32.39 地址里有空格判为非法（否则会攒出一个连不上的地址）",
+        Remote.normalizeBase("https://dav example.com") == null)
+    check("32.40 拼出来的 URL 不会出现双斜杠",
+        Remote.joinUrl("https://d.example.com/dav/", "a.json") ==
+                "https://d.example.com/dav/a.json")
+    check("32.41 路径段里的中文会被百分号编码",
+        Remote.joinUrl("https://d.example.com/dav", "阅闻备份.json") ==
+                "https://d.example.com/dav/%E9%98%85%E9%97%BB%E5%A4%87%E4%BB%BD.json")
+    check("32.42 - . _ ~ 不用编码（RFC 3986 的未保留字符）",
+        Remote.encodePathSegment("a-b_c.d~e") == "a-b_c.d~e")
+    check("32.43 编码再解码能回到原文",
+        Remote.decodePathSegment(Remote.encodePathSegment("中文 空格/斜杠")) == "中文 空格/斜杠")
+    check("32.44 畸形的转义原样保留，不会把列表搅乱",
+        Remote.decodePathSegment("%ZZx") == "%ZZx" && Remote.decodePathSegment("abc%") == "abc%")
+    check("32.45 备份文件名编码后原样不动（所以它才必须全 ASCII）",
+        Remote.encodePathSegment(BackupSpan.autoName(t0)) == BackupSpan.autoName(t0))
+
+    // ---- 32.4 GitHub Gist ----
+
+    val create = Remote.gistCreateBody("yuewen-20261005-231045.json", "{\"a\":1}")
+    check("32.46 新建的 Gist 是私密的（备份里有全部订阅源和笔记）",
+        create.contains("\"public\":false"))
+    check("32.47 新建请求里带上了文件名", create.contains("yuewen-20261005-231045.json"))
+    // 用我们自己的解析器读回来 —— 顺带证明转义（换行 / 引号）是对的。
+    val tricky = "第一行\n第二行 \"带引号\" \\反斜杠\\ \u0001控制符"
+    val trickyBody = Remote.gistCreateBody("n.json", tricky)
+    check("32.48 正文里的换行和引号会被正确转义（用自家解析器读回来验证）",
+        Remote.gistFileContent(trickyBody, "n.json") == tricky)
+    check("32.49 往已有 Gist 加文件时只带 files 段",
+        Remote.gistAddFileBody("n.json", "x").startsWith("{\"files\":{") &&
+                !Remote.gistAddFileBody("n.json", "x").contains("public"))
+    // GitHub 删文件的约定是「把值置成 null」，不是传一个标记 —— 写错会变成空操作：
+    // 返回 200 但文件还在，于是「保留最近 N 份」永远不生效。
+    check("32.50 删文件用的是「值置为 null」这个约定",
+        Remote.gistDeleteFilesBody(listOf("a.json", "b.json")) ==
+                "{\"files\":{\"a.json\":null,\"b.json\":null}}")
+    check("32.51 没有要删的文件时也不炸",
+        Remote.gistDeleteFilesBody(emptyList()) == "{\"files\":{}}")
+
+    val gistJson = """
+        {"id":"abc123","files":{
+          "yuewen-20261005-231045.json":{"content":"{\"v\":1}"},
+          "yuewen-20261004-090000.json":{"content":"{\"v\":0}"},
+          "说明.md":{"content":"hello"}}}
+    """.trimIndent()
+    check("32.52 能列出 Gist 里的所有文件名（含非备份文件）",
+        Remote.gistFileNames(gistJson).size == 3)
+    check("32.53 挑「最新的一份」时会跳过非备份文件，也不会挑错那份",
+        BackupSpan.newestFirst(Remote.gistFileNames(gistJson)).firstOrNull() ==
+                "yuewen-20261005-231045.json")
+    check("32.54 能取出指定文件的内容",
+        Remote.gistFileContent(gistJson, "yuewen-20261004-090000.json") == "{\"v\":0}")
+    check("32.55 取不存在的文件返回 null（而不是抛异常）",
+        Remote.gistFileContent(gistJson, "没有这个.json") == null)
+    check("32.56 能从新建响应里拿到 Gist 标识", Remote.gistIdOf(gistJson) == "abc123")
+    check("32.57 响应不是 JSON 时不炸", Remote.gistIdOf("not json") == null)
+    check("32.58 响应里没有 files 时返回空列表", Remote.gistFileNames("{}").isEmpty())
+
+    // ---- 32.5 WebDAV（PROPFIND 响应解析）----
+
+    val dav = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <d:multistatus xmlns:d="DAV:">
+          <d:response>
+            <d:href>/dav/yuewen/</d:href>
+            <d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop></d:propstat>
+          </d:response>
+          <d:response>
+            <d:href>/dav/yuewen/yuewen-20261005-231045.json</d:href>
+            <d:propstat><d:prop><d:getcontentlength>1024</d:getcontentlength></d:prop></d:propstat>
+          </d:response>
+        </d:multistatus>
+    """.trimIndent()
+    val davNames = Remote.davFileNames(dav)
+    check("32.59 从 PROPFIND 响应里取出文件名（只留最后一段）",
+        davNames.contains("yuewen-20261005-231045.json") &&
+                davNames.none { it.contains("/") })
+    check("32.60 目录自身也在响应里，但它不是「我们的备份」会被筛掉",
+        BackupSpan.newestFirst(davNames) == listOf("yuewen-20261005-231045.json"))
+    // 命名空间前缀写死成 d: 的话，换一个网盘（返回 <D:href> 或干脆 <href>）就一个文件都列不出来。
+    val davNoPrefix = "<multistatus><response><href>/dav/a/yuewen-20261005-231045.json</href>" +
+            "</response></multistatus>"
+    check("32.61 不带命名空间前缀的响应也认",
+        Remote.davFileNames(davNoPrefix) == listOf("yuewen-20261005-231045.json"))
+    check("32.62 大写前缀 D: 也认",
+        Remote.davFileNames("<D:href>/yuewen-20261005-231045.json</D:href>") ==
+                listOf("yuewen-20261005-231045.json"))
+    check("32.63 百分号编码的 href 会被解码",
+        Remote.davFileNames("<d:href>/dav/%E9%98%85%E9%97%BB.json</d:href>") ==
+                listOf("阅闻.json"))
+    check("32.64 服务端回完整 URL 形式时也能取到最后一段",
+        Remote.davFileNames(
+            "<d:href>https://dav.example.com/dav/yuewen-20261005-231045.json</d:href>"
+        ) == listOf("yuewen-20261005-231045.json"))
+    check("32.65 响应里没有 href 时返回空列表",
+        Remote.davFileNames("<?xml version=\"1.0\"?><d:multistatus/>").isEmpty())
+    check("32.66 空响应不炸", Remote.davFileNames("").isEmpty())
 
     println()
     println("==========================================")

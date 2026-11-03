@@ -17,6 +17,8 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MarkEmailRead
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.outlined.BookmarkRemove
+import androidx.compose.material.icons.outlined.WatchLater
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -48,6 +50,10 @@ import com.example.yuewen.ui.util.formatRelativeTime
  * 为什么用「长按 + 底部面板」而不是列表项左右滑动？
  * 首页本身是横向可滑动的 Pager（左右滑切 Tab），列表项再吃横向手势会互相打架，
  * 手势冲突会让两边都不跟手。长按是零冲突的方案，也是 Feeder / Read You 的常见做法。
+ *
+ * v2.8：多了「稍后读」一行（[onToggleQueue]），并且 [onMoveFolder] 改成可空 ——
+ * 「稍后读」队列页不提供「移动到收藏夹」（那一页的语义是待办，不是归档），
+ * 传 null 就把那一行整行藏掉，而不是显示一个点了没反应的按钮。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,10 +62,15 @@ fun ArticleActionsSheet(
     onDismiss: () -> Unit,
     onToggleRead: () -> Unit,
     onToggleBookmark: () -> Unit,
-    onMoveFolder: () -> Unit,
+    /** 传 null 则不显示「移动到收藏夹」这一行。 */
+    onMoveFolder: (() -> Unit)?,
     onShare: () -> Unit,
     onCopyLink: () -> Unit,
-    onOpenInBrowser: () -> Unit
+    onOpenInBrowser: () -> Unit,
+    /** 这一篇当前在不在稍后读队列里（决定那一行显示「加入」还是「移出」）。 */
+    isQueued: Boolean = false,
+    /** 传 null 则不显示「稍后读」这一行。 */
+    onToggleQueue: (() -> Unit)? = null
 ) {
     val cs = MaterialTheme.colorScheme
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -103,7 +114,20 @@ fun ArticleActionsSheet(
                 highlighted = article.isBookmarked,
                 onClick = onToggleBookmark
             )
-            ActionRow("移动到收藏夹", Icons.Filled.Folder, onClick = onMoveFolder)
+            // 稍后读（v2.8）。放在收藏下面、收藏夹上面：
+            // 「收藏」和「稍后读」是并列的两种表态，紧挨着放才好比较；
+            // 「移动到收藏夹」是对收藏的进一步操作，属于下一层。
+            if (onToggleQueue != null) {
+                ActionRow(
+                    label = if (isQueued) "移出稍后读" else "加入稍后读",
+                    icon = if (isQueued) Icons.Outlined.BookmarkRemove else Icons.Outlined.WatchLater,
+                    highlighted = isQueued,
+                    onClick = onToggleQueue
+                )
+            }
+            if (onMoveFolder != null) {
+                ActionRow("移动到收藏夹", Icons.Filled.Folder, onClick = onMoveFolder)
+            }
             ActionRow("分享", Icons.Filled.Share, onClick = onShare)
             ActionRow("复制链接", Icons.Filled.ContentCopy, onClick = onCopyLink)
             ActionRow("在浏览器打开原文", Icons.Filled.OpenInBrowser, onClick = onOpenInBrowser)

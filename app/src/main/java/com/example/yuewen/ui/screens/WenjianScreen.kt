@@ -17,19 +17,30 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.yuewen.YuewenApplication
+import com.example.yuewen.data.util.WenjianTabs
 import com.example.yuewen.ui.components.PillTab
 import com.example.yuewen.ui.components.PillTabRow
 import kotlinx.coroutines.launch
 
-/** 闻件页的四个子页。顺序 = 标签栏顺序 = 偏好里存的序号。 */
-private val WENJIAN_TABS = listOf("搜索", "收藏", "历史", "笔记")
+/**
+ * 闻件页的五个子页。顺序 = 标签栏顺序 = [com.example.yuewen.data.util.WenjianTabs] 里的下标。
+ *
+ * ⚠️ 改这个列表必须同步改 [com.example.yuewen.data.util.WenjianTabs]：
+ * 那边有 `COUNT` 常量和升级用的下标换算，两处对不上会导致
+ * 「上次停在哪一栏」记错位置（老用户升级后直接落到别的栏）。
+ *
+ * v2.8：在「搜索」后面插入了「稍后读」。
+ * 放这么靠前是因为它是一栏**要去做的事**（待办性质），
+ * 和后面「收藏 / 历史 / 笔记」这种归档性质的不一样，该更顺手够到。
+ */
+private val WENJIAN_TABS = listOf("搜索", "稍后读", "收藏", "历史", "笔记")
 
 /**
  * 「闻件」＝ 一切**已经属于自己的内容**（v2.0）。
  *
  * 命名来自用户：原来「搜索」「收藏」是两个底部 Tab，占了两个位置，
  * 但它们本质是同一件事 —— 我要找回我看过 / 存下来的东西。
- * 合并成一页，四个子页：搜索 / 收藏 / 历史 / 笔记。
+ * 合并成一页，子页：搜索 / 稍后读 / 收藏 / 历史 / 笔记。
  * 少占一个底栏位置，也多出一个位置给「阅源」。
  *
  * 上次停留在哪一栏会记进 DataStore：切去别处再回来，不至于每次都跳回第一栏。
@@ -81,19 +92,29 @@ fun WenjianScreen(
             modifier = Modifier.statusBarsPadding()
         )
 
+        // 用常量而不是裸数字：插入新栏时只要改 WenjianTabs，这里的分支跟着常量走，
+        // 不会出现「加了栏但 when 还按旧下标分派」这种错位。
         when (tabIndex) {
-            0 -> SearchPane(app = app, onOpenArticle = onOpenArticle, bottomInset = bottomInset)
-            1 -> BookmarksPane(app = app, onOpenArticle = onOpenArticle, bottomInset = bottomInset)
-            2 -> HistoryPane(app = app, onOpenArticle = onOpenArticle, bottomInset = bottomInset)
+            WenjianTabs.SEARCH -> SearchPane(app = app, onOpenArticle = onOpenArticle, bottomInset = bottomInset)
+            WenjianTabs.QUEUE -> QueuePane(app = app, onOpenArticle = onOpenArticle, bottomInset = bottomInset)
+            WenjianTabs.BOOKMARKS -> BookmarksPane(app = app, onOpenArticle = onOpenArticle, bottomInset = bottomInset)
+            WenjianTabs.HISTORY -> HistoryPane(app = app, onOpenArticle = onOpenArticle, bottomInset = bottomInset)
             else -> NotesPane(app = app, onOpenArticle = onOpenArticle, bottomInset = bottomInset)
         }
     }
 }
 
-/** 供设置页 / 外部跳转用：直接打开闻件的某一栏。 */
+/**
+ * 供设置页 / 外部跳转用：直接打开闻件的某一栏。
+ *
+ * v2.8：改为直接复用 [WenjianTabs] 的常量，不再各维护一份 ——
+ * 两套常量最容易出现的问题就是改了一处忘了另一处，而症状是
+ * 「点设置里的链接跳到了隔壁那一栏」，查起来毫无线索。
+ */
 object WenjianTabIndex {
-    const val SEARCH = 0
-    const val BOOKMARKS = 1
-    const val HISTORY = 2
-    const val NOTES = 3
+    const val SEARCH = WenjianTabs.SEARCH
+    const val QUEUE = WenjianTabs.QUEUE
+    const val BOOKMARKS = WenjianTabs.BOOKMARKS
+    const val HISTORY = WenjianTabs.HISTORY
+    const val NOTES = WenjianTabs.NOTES
 }

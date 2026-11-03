@@ -182,6 +182,42 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
+        <!--
+          ============ 桌面小组件（v2.9）============
+
+          两个尺寸各一个 receiver —— 一个 receiver 只能挂一份 provider-info，
+          而「用哪个布局」正是写在 provider-info 里的，所以必须分成两个。
+
+          `android:exported="false"`：APPWIDGET_UPDATE 是系统**指定组件**发过来的，
+          不需要对外暴露。这两条 receiver 名字也绝不能被别的 App 猜到后乱发
+          （那会把我们的卡片刷成空数据）。
+
+          `android:label` 是「添加小组件」面板里显示的名字，两个尺寸要能区分开。
+        -->
+        <receiver
+            android:name=".widget.YuewenSmallWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_small_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_small_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.YuewenWideWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_wide_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_wide_info" />
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="com.example.yuewen.fileprovider"

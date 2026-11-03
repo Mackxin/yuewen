@@ -8,6 +8,11 @@ import androidx.lifecycle.viewModelScope
 import com.example.yuewen.YuewenApplication
 import com.example.yuewen.data.SettingsRepository
 import com.example.yuewen.data.backup.Backup
+import com.example.yuewen.data.backup.BackupException
+import com.example.yuewen.data.backup.BackupTarget
+import com.example.yuewen.data.backup.LocalBackup
+import com.example.yuewen.data.backup.Remote
+import com.example.yuewen.data.backup.RemoteBackup
 import com.example.yuewen.data.model.FeedSource
 import com.example.yuewen.data.model.feedUrlKey
 import com.example.yuewen.data.model.sourceIdOf
@@ -15,8 +20,11 @@ import com.example.yuewen.data.opml.Opml
 import com.example.yuewen.data.preload.PreloadManager
 import com.example.yuewen.data.preload.PreloadProgress
 import com.example.yuewen.data.repository.NewsRepository
+import com.example.yuewen.data.rss.DailyDigestScheduler
 import com.example.yuewen.data.rss.FeedProbe
 import com.example.yuewen.data.rss.RefreshScheduler
+import com.example.yuewen.data.util.BackupSpan
+import com.example.yuewen.data.util.DailyDigest
 import com.example.yuewen.data.util.DEFAULT_HOME_KEYWORDS
 import com.example.yuewen.ui.components.ArticleListMode
 import com.example.yuewen.ui.theme.DEFAULT_CUSTOM_HUE
@@ -27,6 +35,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -62,6 +71,50 @@ class SettingsViewModel(
     val theme: StateFlow<String> = settings.themeFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "system")
     val font: StateFlow<String> = settings.fontFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "standard")
     val autoread: StateFlow<Boolean> = settings.autoreadFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    /**
+     * v2.8：读完自动移出稍后读。
+     *
+     * 只有一个开关，没有第二个 —— 「最新在前」那个排序**只在稍后读页面自己身上**
+     * （顶部的两枚 FilterChip）。同一个东西在设置页再摆一份，除了多一处要同步的
+     * 界面之外没有任何好处，而用户是在队列列表里翻的时候才想改排序的。
+     */
+    val queueAutoDequeue: StateFlow<Boolean> = settings.queueAutoDequeueFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    // ---- v2.8：每日摘要 ----
+    val digestEnabled: StateFlow<Boolean> = settings.digestEnabledFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val digestHour: StateFlow<Int> = settings.digestHourFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DailyDigest.DEFAULT_HOUR)
+    val digestMinute: StateFlow<Int> = settings.digestMinuteFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DailyDigest.DEFAULT_MINUTE)
+
+    /**
+     * 改摘要开关。
+     *
+     * ⚠️ 为什么这里要显式重排（而不是交给 Application 那个订阅）：
+     * Application 用的是 `ensure`（KEEP），它只会「补排一条本来就没有的」，
+     * 而**刚刚被打开的**这个动作在它眼里和「早就开着」没有区别，
+     * 于是不会真的排下一次。用户刚点开开关，当晚却什么都没收到，就是这么来的。
+     */
+    fun setDigestEnabled(v: Boolean) {
+        viewModelScope.launch {
+            settings.setDigestEnabled(v)
+            // 写完再读：这样重排用的时刻和界面显示的是同一份（用户在同一个动作里
+            // 先改时间再打开开关时，不会用上旧时间排期）
+            val h = settings.digestHourFlow.first()
+            val m = settings.digestMinuteFlow.first()
+            DailyDigestScheduler.replace(context, v, h, m)
+        }
+    }
+
+    /** 改推送时刻。改动本身就必须重排 —— 旧的那班还等在昨天算出来的时刻上。 */
+    fun setDigestTime(hour: Int, minute: Int) {
+        viewModelScope.launch {
+            settings.setDigestTime(hour, minute)
+            val enabled = settings.digestEnabledFlow.first()
+            DailyDigestScheduler.replace(context, enabled, hour, minute)
+        }
+    }
     val notify: StateFlow<Boolean> = settings.notifyFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val refreshMinutes: StateFlow<Int> = settings.refreshMinutesFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 30)
 
@@ -278,6 +331,7 @@ class SettingsViewModel(
     fun setTheme(v: String) = viewModelScope.launch { settings.setTheme(v) }
     fun setFont(v: String) = viewModelScope.launch { settings.setFont(v) }
     fun setAutoRead(v: Boolean) = viewModelScope.launch { settings.setAutoRead(v) }
+    fun setQueueAutoDequeue(v: Boolean) = viewModelScope.launch { settings.setQueueAutoDequeue(v) }
     fun setNotify(v: Boolean) = viewModelScope.launch { settings.setNotify(v) }
     fun setListMode(mode: ArticleListMode) = viewModelScope.launch { settings.setListMode(mode.key) }
     fun setReaderTheme(v: String) = viewModelScope.launch { settings.setReaderTheme(v) }
@@ -337,20 +391,39 @@ class SettingsViewModel(
     // ==================== v2.0：完整备份 / 恢复（JSON） ====================
 
     /**
-     * 导出完整备份：订阅源 + 收藏 + 笔记 + 个性化设置，写成一个 JSON 文件。
-     * 返回 (源数, 收藏数, 笔记数)。
+     * 导出完整备份：订阅源 + （收藏 ∪ 稍后读）+ 笔记 + 个性化设置，写成一个 JSON 文件。
+     * 返回 (源数, 收藏与队列总数, 笔记数)。
+     *
+     * ⚠️ v2.8：这里取的是 `allSaved()` 而不是以前的 `allBookmarks()`。
+     * 队列项里有一部分并没有被收藏，只查收藏会把它们整个漏掉（换机后才看得出来）。
      */
     suspend fun writeBackup(uri: Uri): Triple<Int, Int, Int> = withContext(Dispatchers.IO) {
-        val sources = settings.getSources()
-        val bookmarks = repo.allBookmarks()
-        val notes = repo.allNotes()
-        val json = Backup.export(sources, bookmarks, notes, settings.snapshotSettings())
+        val payload = buildBackupPayload()
         context.contentResolver.openOutputStream(uri)?.use { out ->
-            out.write(json.toByteArray(Charsets.UTF_8))
+            out.write(payload.json.toByteArray(Charsets.UTF_8))
             out.flush()
         }
-        Triple(sources.size, bookmarks.size, notes.size)
+        payload.counts
     }
+
+    /**
+     * 渲染一份备份。
+     *
+     * v2.9：**四条写入路径（文件 / Gist / WebDAV / 本地文件夹）共用这一段**。
+     * 各自再抄一份的话，早晚会出现「导出的文件里有队列内容、云备份漏了」这种不一致 ——
+     * 而那种问题只有等用户换机恢复之后才会发现，那时本地数据可能已经没了。
+     */
+    private suspend fun buildBackupPayload(): BackupPayload {
+        val sources = settings.getSources()
+        val saved = repo.allSaved()
+        val notes = repo.allNotes()
+        return BackupPayload(
+            json = Backup.export(sources, saved, notes, settings.snapshotSettings()),
+            counts = Triple(sources.size, saved.size, notes.size)
+        )
+    }
+
+    private class BackupPayload(val json: String, val counts: Triple<Int, Int, Int>)
 
     /** 备份文件的默认名（带日期）。 */
     fun backupFileName(): String = Backup.fileName()
@@ -366,7 +439,17 @@ class SettingsViewModel(
             ?.use { it.readBytes().toString(Charsets.UTF_8) }
             .orEmpty()
         val bundle = Backup.parse(text) ?: return@withContext null
+        applyBundle(bundle)
+    }
 
+    /**
+     * 把一份已经解析好的备份并进本机。**只加不减**。
+     *
+     * v2.9：文件和三条云通道共用这一段 —— 「怎么合并」这件事只能有一份实现，
+     * 否则「从文件恢复」和「从网盘恢复」会慢慢长成两套行为，
+     * 用户会遇到「同样的备份，从文件导进来是对的，从 Gist 拉下来少了东西」。
+     */
+    private suspend fun applyBundle(bundle: Backup.Bundle): Triple<Int, Int, Int> {
         // 订阅源：去重后追加。
         // v2.3 两处修正：
         //   ① id 改回 `sourceIdOf(url)`（以前是 `"b" + 时间戳`，破坏了「id 由地址派生」
@@ -393,15 +476,246 @@ class SettingsViewModel(
             runCatching { repo.refreshAll() }
             settings.setLastRefresh(System.currentTimeMillis())
         }
-        Triple(addedSources, bundle.bookmarks.size, bundle.notes.size)
+        return Triple(addedSources, bundle.bookmarks.size, bundle.notes.size)
     }
 
-    /** 备份用：一句话描述本机现在有多少东西（导出前展示）。 */
+    /**
+     * 备份用：一句话描述本机现在有多少东西（导出前展示）。
+     *
+     * v2.8：收藏和稍后读分开报数 —— 两条本来就不等长，
+     * 合成一个「N 篇收藏」会让用户以为队列里的也算进收藏了。
+     */
     suspend fun backupSummary(): String = withContext(Dispatchers.IO) {
         val s = settings.getSources().size
-        val b = runCatching { repo.allBookmarks().size }.getOrDefault(0)
+        val b = runCatching { repo.observeBookmarks().first().size }.getOrDefault(0)
+        val q = runCatching { repo.allQueued().size }.getOrDefault(0)
         val n = runCatching { repo.noteCount() }.getOrDefault(0)
-        "$s 个阅源 · $b 篇收藏 · $n 条笔记"
+        "$s 个阅源 · $b 篇收藏 · $q 篇稍后读 · $n 条笔记"
+    }
+
+    // ==================== v2.9：云备份（三条通道） ====================
+
+    /**
+     * 备份到指定通道。
+     *
+     * @return 给用户看的一句话
+     * @throws BackupException 失败时抛出一句**能直接展示的中文**
+     */
+    suspend fun cloudBackup(target: BackupTarget): String = withContext(Dispatchers.IO) {
+        val payload = buildBackupPayload()
+        val (s, b, n) = payload.counts
+        if (s + b + n == 0) throw BackupException("本机还没有可备份的内容")
+
+        val name = BackupSpan.autoName(System.currentTimeMillis())
+        val keep = settings.backupKeepFlow.first()
+
+        when (target) {
+            BackupTarget.GIST -> {
+                val token = settings.backupGistTokenFlow.first()
+                if (token.isBlank()) throw BackupException("还没有填 GitHub 令牌")
+                // 第一次备份会自动新建 Gist，拿回来的 id **必须存下来** ——
+                // 不存的话下次又会新建一个，用户 GitHub 上会攒出一串没人管的 Gist。
+                val id = RemoteBackup.gistBackup(
+                    token, settings.backupGistIdFlow.first(), name, payload.json
+                )
+                settings.setBackupGistId(id)
+            }
+
+            BackupTarget.WEBDAV -> {
+                val (base, user, pass) = davConfig()
+                RemoteBackup.davBackup(base, user, pass, name, payload.json)
+            }
+
+            BackupTarget.LOCAL -> {
+                LocalBackup.write(context.contentResolver, localTreeUri(), name, payload.json)
+            }
+        }
+
+        // 清理旧的。
+        // ⚠️ 清不掉**不算这次备份失败**：数据已经安全上传了，
+        // 因为「删旧文件没删掉」而报一句「备份失败」，用户会以为东西没上去、
+        // 然后再备份一次 —— 那才是真的把目录堆乱。
+        val pruned = runCatching { pruneOld(target, keep) }.getOrDefault(0)
+
+        settings.setBackupLastAt(System.currentTimeMillis())
+        "已备份到${target.label}：$s 个阅源、$b 篇收藏、$n 条笔记" +
+                if (pruned > 0) "（顺带清掉 $pruned 份旧的）" else ""
+    }
+
+    /**
+     * 从指定通道恢复**最新的一份**备份。
+     *
+     * 只恢复最新那份是刻意的：界面上不给「选哪一份」是减少一处要维护的选择界面，
+     * 而用户真正会后悔的场景（「今天把收藏删空了」）要的是最近一次，
+     * 不是三周前那次。真要回更早的，把文件下载下来用「从文件恢复」。
+     */
+    suspend fun cloudRestore(target: BackupTarget): String = withContext(Dispatchers.IO) {
+        val text = when (target) {
+            BackupTarget.GIST -> {
+                val token = settings.backupGistTokenFlow.first()
+                if (token.isBlank()) throw BackupException("还没有填 GitHub 令牌")
+                val id = settings.backupGistIdFlow.first()
+                if (id.isBlank()) throw BackupException("还没有备份过，没有可恢复的内容")
+                RemoteBackup.gistFetchLatest(token, id)?.second
+            }
+
+            BackupTarget.WEBDAV -> {
+                val (base, user, pass) = davConfig()
+                val newest = BackupSpan.newestFirst(RemoteBackup.davNames(base, user, pass)).firstOrNull()
+                newest?.let { RemoteBackup.davFetch(base, user, pass, it) }
+            }
+
+            BackupTarget.LOCAL -> {
+                val tree = localTreeUri()
+                val newest = BackupSpan.newestFirst(LocalBackup.listNames(context.contentResolver, tree))
+                    .firstOrNull()
+                newest?.let { LocalBackup.read(context.contentResolver, tree, it) }
+            }
+        } ?: throw BackupException("${target.label}上还没有备份")
+
+        val bundle = Backup.parse(text)
+            ?: throw BackupException("那份文件不是阅闻的备份（可能被别的程序覆盖过）")
+        val (s, b, n) = applyBundle(bundle)
+        if (s + b + n == 0) "备份是空的，本机内容没有变化"
+        else "已恢复：新增 $s 个阅源、$b 篇收藏、$n 条笔记"
+    }
+
+    /**
+     * 「这条通道现在什么情况」——设置页那一行下面的小字。
+     *
+     * **绝不抛异常**：它只是个展示用的状态，网络不通时显示一句「读不出来」就好，
+     * 不该让整个设置页跟着炸。
+     */
+    suspend fun cloudStatus(target: BackupTarget): String = withContext(Dispatchers.IO) {
+        runCatching {
+            when (target) {
+                BackupTarget.GIST -> {
+                    if (settings.backupGistTokenFlow.first().isBlank()) return@runCatching "未配置"
+                    val id = settings.backupGistIdFlow.first()
+                    if (id.isBlank()) return@runCatching "已填令牌，首次备份会自动新建 Gist"
+                    describeRemote(RemoteBackup.gistNames(settings.backupGistTokenFlow.first(), id))
+                }
+
+                BackupTarget.WEBDAV -> {
+                    if (settings.backupDavUrlFlow.first().isBlank()) return@runCatching "未配置"
+                    val (base, user, pass) = davConfig()
+                    describeRemote(RemoteBackup.davNames(base, user, pass))
+                }
+
+                BackupTarget.LOCAL -> {
+                    val raw = settings.backupLocalTreeFlow.first()
+                    if (raw.isBlank()) return@runCatching "未配置"
+                    describeRemote(
+                        LocalBackup.listNames(context.contentResolver, Uri.parse(raw))
+                    )
+                }
+            }
+        }.getOrElse { "读不出来：" + (it.message ?: "网络或权限问题") }
+    }
+
+    private fun describeRemote(names: List<String>): String {
+        val mine = BackupSpan.newestFirst(names)
+        if (mine.isEmpty()) return "还没有备份"
+        val whenText = BackupSpan.displayOf(mine.first()) ?: return "已有 ${mine.size} 份"
+        return "已有 ${mine.size} 份，最近 $whenText"
+    }
+
+    /** 按保留份数清掉最旧的那几份。返回清掉的数量。 */
+    private suspend fun pruneOld(target: BackupTarget, keep: Int): Int {
+        val doomed = when (target) {
+            BackupTarget.GIST -> {
+                val token = settings.backupGistTokenFlow.first()
+                val id = settings.backupGistIdFlow.first()
+                val list = BackupSpan.toPrune(RemoteBackup.gistNames(token, id), keep)
+                RemoteBackup.gistDelete(token, id, list)
+                list
+            }
+
+            BackupTarget.WEBDAV -> {
+                val (base, user, pass) = davConfig()
+                val list = BackupSpan.toPrune(RemoteBackup.davNames(base, user, pass), keep)
+                RemoteBackup.davDelete(base, user, pass, list)
+                list
+            }
+
+            BackupTarget.LOCAL -> {
+                val tree = localTreeUri()
+                val list = BackupSpan.toPrune(LocalBackup.listNames(context.contentResolver, tree), keep)
+                LocalBackup.delete(context.contentResolver, tree, list)
+                list
+            }
+        }
+        return doomed.size
+    }
+
+    /** 读 WebDAV 配置，顺手把地址收拾干净（地址不合法就直接报中文，不留到网络层）。 */
+    private suspend fun davConfig(): Triple<String, String, String> {
+        val raw = settings.backupDavUrlFlow.first()
+        if (raw.isBlank()) throw BackupException("还没有填 WebDAV 地址")
+        val base = Remote.normalizeBase(raw)
+            ?: throw BackupException("WebDAV 地址格式不对，例如 https://dav.jianguoyun.com/dav/yuewen")
+        return Triple(base, settings.backupDavUserFlow.first(), settings.backupDavPassFlow.first())
+    }
+
+    private suspend fun localTreeUri(): Uri {
+        val raw = settings.backupLocalTreeFlow.first()
+        if (raw.isBlank()) throw BackupException("还没有选备份文件夹")
+        return Uri.parse(raw)
+    }
+
+    /** 记住用户选的本地备份目录，并把授权**长期化**（不然重启后就失效了）。 */
+    suspend fun setLocalBackupTree(uri: Uri) {
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(
+                uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        }
+        settings.setBackupLocalTree(uri.toString())
+    }
+
+    // ---- v2.9：云备份的界面状态 ----
+
+    val backupKeep: StateFlow<Int> = settings.backupKeepFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), BackupSpan.KEEP_DEFAULT)
+
+    val backupGistToken: StateFlow<String> = settings.backupGistTokenFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+    val backupGistId: StateFlow<String> = settings.backupGistIdFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+    val backupDavUrl: StateFlow<String> = settings.backupDavUrlFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+    val backupDavUser: StateFlow<String> = settings.backupDavUserFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+    val backupDavPass: StateFlow<String> = settings.backupDavPassFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
+    /** 三条通道的状态一次性读出来（设置页展开云备份面板时调用）。 */
+    suspend fun cloudStatuses(): Map<BackupTarget, String> =
+        BackupTarget.values().associateWith { cloudStatus(it) }
+
+    fun setBackupKeep(v: Int) {
+        viewModelScope.launch { settings.setBackupKeep(v) }
+    }
+
+    /**
+     * 存 Gist 配置。
+     *
+     * ⚠️ 刻意做成 `suspend` 而不是「自己起一个协程就返回」：
+     * 调用方（设置页）在保存后要立刻重新拉一次三通道状态去刷新那一行小字。
+     * 如果这里 fire-and-forget，那次「重新拉」会和这里的写库赛跑 ——
+     * 读到的是写之前的旧值，界面就一直显示「未配置」，用户以为没保存上。
+     */
+    suspend fun saveGistConfig(token: String, gistId: String) {
+        settings.setBackupGistToken(token)
+        settings.setBackupGistId(gistId)
+    }
+
+    /** 存 WebDAV 配置。`suspend` 的理由同 [saveGistConfig]。 */
+    suspend fun saveDavConfig(url: String, user: String, pass: String) {
+        settings.setBackupDavUrl(url)
+        settings.setBackupDavUser(user)
+        settings.setBackupDavPass(pass)
     }
 
     /**

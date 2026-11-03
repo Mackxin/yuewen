@@ -614,6 +614,18 @@ fun HomeScreen(
                 vm.toggleBookmark(target.link, !target.isBookmarked)
                 actionTarget = null
             },
+            // v2.8：稍后读。文章本身带着 queuedAt，直接读当前态即可。
+            isQueued = target.queuedAt > 0L,
+            onToggleQueue = {
+                val adding = target.queuedAt <= 0L
+                vm.toggleQueue(target.link, adding)
+                actionTarget = null
+                Toast.makeText(
+                    context,
+                    if (adding) "已加入稍后读" else "已移出稍后读",
+                    Toast.LENGTH_SHORT
+                ).show()
+            },
             onMoveFolder = {
                 actionTarget = null
                 folderTarget = target

@@ -75,6 +75,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.yuewen.BuildConfig
 import com.example.yuewen.YuewenApplication
+import com.example.yuewen.data.backup.BackupException
+import com.example.yuewen.data.backup.BackupTarget
+import com.example.yuewen.data.util.DailyDigest
 import com.example.yuewen.data.util.HOME_KEYWORD_LIMIT
 import com.example.yuewen.ui.components.ArticleListMode
 import com.example.yuewen.ui.theme.ReaderFont
@@ -260,8 +263,63 @@ private fun ChoiceRow(
     }
 }
 
-/** 行尾的「当前值 ▾」样式，三处下拉菜单共用。 */
+/**
+ * 「推送时间」那一排时刻胶囊（v2.8 每日摘要）。
+ *
+ * 和 [ChoiceRow] 长得像但不复用它，差在两处：
+ * ① 选项是「时:分」对，不是字符串，需要现拼文案 + 按对比较；
+ * ② 用 `FlowRow` 允许换行 —— 6 个时刻在某些字号下（系统字体放大到 1.15 倍，
+ *    见 MainActivity 的 `fontScale`）横着排不下，硬塞会被挤扁或者裁掉。
+ *    换行之后最多多占一行，不会破版。
+ *
+ * ⚠️ 标签宽度沿用 [ChoiceRow] 的 66dp，这样左边的「推送时间」和上面
+ * 「阅读器字体」那些标签是**同一条竖线**，设置页看起来才是一整块。
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
+private fun TimePresetRow(
+    label: String,
+    presets: List<Pair<Int, Int>>,
+    hour: Int,
+    minute: Int,
+    onSelect: (Int, Int) -> Unit
+) {
+    val cs = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = cs.onSurface,
+            modifier = Modifier.width(66.dp)
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            presets.forEach { (h, m) ->
+                val sel = h == hour && m == minute
+                Surface(
+                    onClick = { onSelect(h, m) },
+                    shape = MaterialTheme.shapes.extraSmall,
+                    // 和 ChoiceRow 完全同一套选中态：主色 16% 底 + 主色文字，无描边
+                    color = if (sel) cs.primary.copy(alpha = 0.16f) else cs.surfaceContainerHigh
+                ) {
+                    Text(
+                        DailyDigest.format(h, m),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (sel) cs.primary else cs.onSurface,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 行尾的「当前值 ▾」样式，三处下拉菜单共用。 */@Composable
 private fun ValueTrailing(text: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -615,6 +673,11 @@ fun SettingsScreen(
     val font by vm.font.collectAsStateWithLifecycle()
     val notify by vm.notify.collectAsStateWithLifecycle()
     val autoread by vm.autoread.collectAsStateWithLifecycle()
+    val queueAutoDequeue by vm.queueAutoDequeue.collectAsStateWithLifecycle()
+    // v2.8：每日摘要
+    val digestEnabled by vm.digestEnabled.collectAsStateWithLifecycle()
+    val digestHour by vm.digestHour.collectAsStateWithLifecycle()
+    val digestMinute by vm.digestMinute.collectAsStateWithLifecycle()
     val refresh by vm.refreshMinutes.collectAsStateWithLifecycle()
     val sources by vm.sources.collectAsStateWithLifecycle()
     val blockedSources by vm.blockedSources.collectAsStateWithLifecycle()
@@ -658,6 +721,14 @@ fun SettingsScreen(
     // v2.4：首页关键词
     val homeKeywords by vm.homeKeywords.collectAsStateWithLifecycle()
     val homeShowKeywords by vm.homeShowKeywords.collectAsStateWithLifecycle()
+
+    // v2.9：云备份
+    val backupKeep by vm.backupKeep.collectAsStateWithLifecycle()
+    val gistToken by vm.backupGistToken.collectAsStateWithLifecycle()
+    val gistId by vm.backupGistId.collectAsStateWithLifecycle()
+    val davUrl by vm.backupDavUrl.collectAsStateWithLifecycle()
+    val davUser by vm.backupDavUser.collectAsStateWithLifecycle()
+    val davPass by vm.backupDavPass.collectAsStateWithLifecycle()
 
     val cs = MaterialTheme.colorScheme
     val context = LocalContext.current
@@ -778,6 +849,57 @@ fun SettingsScreen(
             Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
             summary = vm.backupSummary()
         }
+    }
+
+    // ---------------- v2.9：云备份（三条通道） ----------------
+    var showCloud by remember { mutableStateOf(false) }
+    /** 正在忙的那条通道标签；null = 空闲。用它禁用按钮，避免连点发出两份备份。 */
+    var cloudBusy by remember { mutableStateOf<String?>(null) }
+    var cloudStatus by remember { mutableStateOf(emptyMap<BackupTarget, String>()) }
+    var showGistConfig by remember { mutableStateOf(false) }
+    var showDavConfig by remember { mutableStateOf(false) }
+
+    /**
+     * 本地文件夹走系统的目录选择器。
+     *
+     * ⚠️ 选完之后必须 `takePersistableUriPermission`（在 vm.setLocalBackupTree 里做）——
+     * 不长期化的话，App 一重启授权就没了，用户下次点「备份」只会收到一句
+     * 「访问不了这个文件夹」，而他会以为是自己把文件夹删了。
+     */
+    val localTreeLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            vm.setLocalBackupTree(uri)
+            cloudStatus = vm.cloudStatuses()
+        }
+    }
+
+    /** 备份 / 恢复共用一个入口：都要置忙、都要弹结果、都要把状态重新读一遍。 */
+    val runCloud: (BackupTarget, Boolean) -> Unit = { target, isRestore ->
+        if (cloudBusy == null) {
+            cloudBusy = target.label
+            scope.launch {
+                val msg = try {
+                    if (isRestore) vm.cloudRestore(target) else vm.cloudBackup(target)
+                } catch (e: Exception) {
+                    // BackupException 带的是一句能直接给用户看的中文；
+                    // 其它异常理论上不该出现，但也必须兜成一句人话，
+                    // 不能让用户对着一句类名（或者空白）猜发生了什么。
+                    (e as? BackupException)?.message
+                        ?: ((if (isRestore) "恢复失败：" else "备份失败：") + (e.message ?: "未知错误"))
+                }
+                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                cloudStatus = vm.cloudStatuses()
+                cloudBusy = null
+            }
+        }
+    }
+
+    // 展开云备份面板时读一次三条通道的状态（会走网络，所以只在打开的那一刻读）。
+    LaunchedEffect(showCloud) {
+        if (showCloud) cloudStatus = vm.cloudStatuses()
     }
 
     Column(
@@ -1222,6 +1344,20 @@ fun SettingsScreen(
                     "打开文章自动标为已读",
                     trailing = { Switch(checked = autoread, onCheckedChange = { vm.setAutoRead(it) }) }
                 )
+                // v2.8：和上面那条是**一对** —— 它认的就是「打开文章」这个动作，
+                // 上面关掉之后这条永远没机会触发，所以跟着一起藏起来，
+                // 而不是留一个永远不生效的开关让人猜。（同款做法见「离线阅读」里的 Wi-Fi 那条。）
+                if (autoread) {
+                    Div()
+                    SettingsRow(
+                        "读完的文章自动移出稍后读",
+                        trailing = { Switch(checked = queueAutoDequeue, onCheckedChange = { vm.setQueueAutoDequeue(it) }) }
+                    )
+                    CaptionMore(
+                        summary = "打开一篇在稍后读里的文章，它会自动从队列里消失，并弹一条可「撤销」的提示。",
+                        detail = "关掉就一直是「读过但还没清」的状态（队列页会显示有几篇已读），什么时候清由你自己决定。"
+                    )
+                }
             }
         }
 
@@ -1312,6 +1448,35 @@ fun SettingsScreen(
                     "新内容提醒",
                     trailing = { Switch(checked = notify, onCheckedChange = { vm.setNotify(it) }) }
                 )
+                Div()
+                // v2.8：每日摘要。
+                //
+                // 刻意**不**跟着上面那个「新内容提醒」走：那条是后台刷新顺手报个数，
+                // 这条是 App 主动在固定时刻找上门，两者的心理预期不一样 ——
+                // 用户完全可能想「刷新完告诉我一声，但别每天早上打扰我」，反之亦然。
+                SettingsRow(
+                    "每日摘要",
+                    trailing = { Switch(checked = digestEnabled, onCheckedChange = { vm.setDigestEnabled(it) }) }
+                )
+                if (digestEnabled) {
+                    TimePresetRow(
+                        label = "推送时间",
+                        presets = DailyDigest.PRESETS,
+                        hour = digestHour,
+                        minute = digestMinute,
+                        onSelect = { h, m -> vm.setDigestTime(h, m) }
+                    )
+                    CaptionMore(
+                        summary = "每天到点汇总一条：今天有多少新内容、队列里还压着几篇。",
+                        detail = "没有新内容、队列也空的时候不会推送 —— 与其准时响一声让你点开发现什么都没有，" +
+                                "不如安静一天。\n\n" +
+                                "推送时刻是在 App 冷启动时补排的，所以改完设置不用等；" +
+                                "但如果系统把 App 强行停掉（比如手动「强制停止」），" +
+                                "需要重新打开一次 App 才会继续推送。\n\n" +
+                                "这条通知走的是独立频道，可以在系统设置里单独关掉，" +
+                                "不影响上面的「新内容提醒」。"
+                    )
+                }
                 Div()
                 SettingsRow(
                     "不想看的内容",
@@ -1406,6 +1571,13 @@ fun SettingsScreen(
                 Caption("换手机、重装时导入这一个文件就够了。")
                 Div()
                 SettingsRow(
+                    "云端备份",
+                    trailing = { Text("Gist / 网盘 / 本地文件夹", color = cs.primary) },
+                    onClick = { showCloud = true }
+                )
+                Caption("传到远端或别的文件夹，换机时不用先找到那个 JSON 文件。")
+                Div()
+                SettingsRow(
                     "阅读统计",
                     trailing = { Text("已读 / 来源排行", color = cs.onSurfaceVariant) },
                     onClick = onOpenStats
@@ -1467,6 +1639,60 @@ fun SettingsScreen(
             onDismiss = { showBackup = false },
             onExport = { showBackup = false; backupExportLauncher.launch(vm.backupFileName()) },
             onImport = { showBackup = false; backupImportLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }
+        )
+    }
+
+    // ---------------- v2.9：云备份 ----------------
+    if (showCloud) {
+        CloudBackupDialog(
+            status = cloudStatus,
+            keep = backupKeep,
+            busy = cloudBusy,
+            onKeep = { vm.setBackupKeep(it) },
+            onConfig = { target ->
+                when (target) {
+                    BackupTarget.GIST -> showGistConfig = true
+                    BackupTarget.WEBDAV -> showDavConfig = true
+                    // 本地文件夹没有「配置」对话框 —— 系统自己的目录选择器就是那个对话框
+                    BackupTarget.LOCAL -> localTreeLauncher.launch(null)
+                }
+            },
+            onBackup = { runCloud(it, false) },
+            onRestore = { runCloud(it, true) },
+            onDismiss = { showCloud = false }
+        )
+    }
+
+    if (showGistConfig) {
+        GistConfigDialog(
+            token = gistToken,
+            gistId = gistId,
+            onSave = { t, g ->
+                showGistConfig = false
+                // 先等写库落地、再拉状态。反过来写（先拉后写）会读到旧值，
+                // 那一行小字就一直停在「未配置」，看着像没保存上。
+                scope.launch {
+                    vm.saveGistConfig(t, g)
+                    cloudStatus = vm.cloudStatuses()
+                }
+            },
+            onDismiss = { showGistConfig = false }
+        )
+    }
+
+    if (showDavConfig) {
+        DavConfigDialog(
+            url = davUrl,
+            user = davUser,
+            pass = davPass,
+            onSave = { u, n, p ->
+                showDavConfig = false
+                scope.launch {
+                    vm.saveDavConfig(u, n, p)
+                    cloudStatus = vm.cloudStatuses()
+                }
+            },
+            onDismiss = { showDavConfig = false }
         )
     }
 
@@ -1570,6 +1796,274 @@ private fun BackupDialog(
         },
         dismissButton = {
             TextButton(onClick = onImport) { Text("从文件恢复") }
+        }
+    )
+}
+
+// ------------------------------------------------------------------ v2.9：云备份
+
+/**
+ * 云备份面板（v2.9）。
+ *
+ * 三条通道摆在同一个弹窗里，而不是各自藏进子菜单：
+ * 用户要判断的是「我现在到底有没有备份」，三条通道分三处看等于每次都要点三下；
+ * 摆在一条竖线上，「哪条配了、哪条还没」一眼就看完。
+ *
+ * 每一格都配「配置 / 备份 / 恢复」三个动作，**不给「测试连接」** ——
+ * 状态行本身就是在读远端的目录列表，能列出「已有 N 份，最近 …」就说明连接是通的，
+ * 再多一个测试按钮只是多一次网络请求和一个要解释的失败态。
+ */
+@Composable
+private fun CloudBackupDialog(
+    status: Map<BackupTarget, String>,
+    keep: Int,
+    busy: String?,
+    onKeep: (Int) -> Unit,
+    onConfig: (BackupTarget) -> Unit,
+    onBackup: (BackupTarget) -> Unit,
+    onRestore: (BackupTarget) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val cs = MaterialTheme.colorScheme
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("云端备份") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    "内容和「备份与恢复」里的完全一样（订阅源 / 收藏与稍后读 / 笔记 / 个性化设置），" +
+                            "只是直接传到远端，换机时不用先找到那个文件。\n\n" +
+                            "三条通道可以同时用。令牌和密码只存在这台设备上，不会写进备份文件。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = cs.onSurfaceVariant
+                )
+                Spacer(Modifier.height(10.dp))
+
+                BackupTarget.values().forEach { target ->
+                    CloudTargetBlock(
+                        target = target,
+                        status = status[target] ?: "读取中…",
+                        // 任意一条通道在忙就把全部按钮锁上：同时往两条通道发备份没有好处，
+                        // 而并发写同一份 DataStore 设置是我们要避开的。
+                        enabled = busy == null,
+                        onConfig = { onConfig(target) },
+                        onBackup = { onBackup(target) },
+                        onRestore = { onRestore(target) }
+                    )
+                }
+
+                HorizontalDivider(color = cs.outlineVariant)
+                Spacer(Modifier.height(8.dp))
+                Text("每条通道各保留", style = MaterialTheme.typography.labelLarge, color = cs.onSurface)
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    listOf(1, 3, 5, 10, 30).forEach { n ->
+                        val sel = n == keep
+                        Surface(
+                            onClick = { onKeep(n) },
+                            shape = MaterialTheme.shapes.extraSmall,
+                            color = if (sel) cs.primary.copy(alpha = 0.16f) else cs.surfaceContainerHigh
+                        ) {
+                            Text(
+                                "$n 份",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (sel) cs.primary else cs.onSurface,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "超出份数的旧备份会被自动删掉。文件很小（不含正文缓存），一般留 5 份就够。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = cs.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("关闭", color = cs.primary) }
+        }
+    )
+}
+
+@Composable
+private fun CloudTargetBlock(
+    target: BackupTarget,
+    status: String,
+    enabled: Boolean,
+    onConfig: () -> Unit,
+    onBackup: () -> Unit,
+    onRestore: () -> Unit
+) {
+    val cs = MaterialTheme.colorScheme
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Text(target.label, style = MaterialTheme.typography.bodyLarge, color = cs.onSurface)
+        Text(
+            status,
+            style = MaterialTheme.typography.labelSmall,
+            color = cs.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            CloudActionChip("配置", enabled, onConfig)
+            CloudActionChip("备份", enabled, onBackup)
+            CloudActionChip("恢复", enabled, onRestore)
+        }
+    }
+}
+
+/** 弹窗里的小按钮。和设置页的胶囊同一个形状，只是窄一点 —— 一行要放三个。 */
+@Composable
+private fun CloudActionChip(text: String, enabled: Boolean, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = MaterialTheme.shapes.extraSmall,
+        color = if (enabled) cs.primary.copy(alpha = 0.12f) else cs.surfaceContainerHigh
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (enabled) cs.primary else cs.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+        )
+    }
+}
+
+/**
+ * Gist 配置。
+ *
+ * ⚠️ 输入框里显示的是**明文令牌**，这是刻意的取舍：
+ * 这是用户自己的设备、自己的设置页，而他最需要做的事就是「确认我粘对了没有」——
+ * 打上一串圆点只会让他反复粘贴。真正要防的是**备份文件被转发出去**，
+ * 而令牌根本不进备份（见 SettingsRepository 的 BACKUP_KEYS 注释）。
+ */
+@Composable
+private fun GistConfigDialog(
+    token: String,
+    gistId: String,
+    onSave: (String, String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val cs = MaterialTheme.colorScheme
+    var tk by remember { mutableStateOf(token) }
+    var id by remember { mutableStateOf(gistId) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("GitHub Gist") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    "1. 打开 github.com/settings/tokens 新建一个 Classic token；\n" +
+                            "2. 权限只勾 gist 这一项，别的都不用勾；\n" +
+                            "3. 把生成的那串粘到下面。\n\n" +
+                            "令牌只保存在这台设备上，不会写进备份文件 —— 换机后需要重新填一次。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = cs.onSurfaceVariant
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = tk,
+                    onValueChange = { tk = it },
+                    label = { Text("个人访问令牌") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = id,
+                    onValueChange = { id = it },
+                    label = { Text("Gist 标识（留空 = 首次备份时自动新建）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Gist 标识会跟着备份走，所以恢复之后只要再填一次令牌，" +
+                            "后面的备份会接着写进原来那个 Gist，不会又新建一个。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = cs.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(tk, id) }) { Text("保存", color = cs.primary) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
+}
+
+/**
+ * WebDAV 配置。
+ *
+ * 地址填到**目录**（不是文件），例如坚果云是 `https://dav.jianguoyun.com/dav/阅闻`；
+ * App 会在那里放 `yuewen-<时间戳>.json`，并顺手把多出来的旧文件删掉。
+ */
+@Composable
+private fun DavConfigDialog(
+    url: String,
+    user: String,
+    pass: String,
+    onSave: (String, String, String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val cs = MaterialTheme.colorScheme
+    var u by remember { mutableStateOf(url) }
+    var n by remember { mutableStateOf(user) }
+    var p by remember { mutableStateOf(pass) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("WebDAV 网盘") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    "坚果云 / Nextcloud / 群晖这些都能用。地址填到想放备份的那个目录，例如：\n" +
+                            "https://dav.jianguoyun.com/dav/阅闻\n\n" +
+                            "很多网盘要求用「应用密码 / 授权码」而不是登录密码 —— " +
+                            "坚果云在「账户信息 → 安全选项 → 第三方应用管理」里生成。\n\n" +
+                            "密码只保存在这台设备上，不会写进备份文件。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = cs.onSurfaceVariant
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = u,
+                    onValueChange = { u = it },
+                    label = { Text("地址（到目录）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = n,
+                    onValueChange = { n = it },
+                    label = { Text("账号") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = p,
+                    onValueChange = { p = it },
+                    label = { Text("密码 / 应用授权码") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(u, n, p) }) { Text("保存", color = cs.primary) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
         }
     )
 }

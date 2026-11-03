@@ -16,4 +16,28 @@
     <string name="icon_name_5">极简新闻</string>
     <string name="icon_name_6">头条聚合</string>
     <string name="icon_name_7">阅闻 RSS</string>
+
+    <!--
+      稍后读：读完自动出队时的提示与撤销。
+      「读完自动出队」开关默认开启，所以这条 Snackbar 是常客，文案要短。
+    -->
+    <string name="queue_auto_dequeued">读完，已移出稍后读</string>
+    <string name="action_undo">撤销</string>
+    <string name="queue_undo_done">已放回稍后读</string>
+
+    <!--
+      桌面小组件（v2.9）。
+
+      label 是「添加小组件」面板里显示的名字 —— 两个尺寸必须有区分度，
+      否则面板里会出现两条一模一样的「阅闻」，用户只能靠尺寸去猜。
+      desc 是长按/选中时的说明（API 31+ 显示）。
+    -->
+    <string name="widget_small_label">阅闻 · 未读</string>
+    <string name="widget_small_desc">一眼看到还有多少条没读</string>
+    <string name="widget_wide_label">阅闻 · 今日速览</string>
+    <string name="widget_wide_desc">未读数量 + 最新两条未读标题</string>
+
+    <!-- 卡片上的静态文字。动态数字与摘要由 data/util/WidgetSnapshot.kt 拼。 -->
+    <string name="widget_brand">阅闻</string>
+    <string name="widget_unread">未读</string>
 </resources>

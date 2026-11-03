@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.yuewen"
         minSdk = 26
         targetSdk = 34
-        versionCode = 31
-        versionName = "2.7.6"
+        versionCode = 35
+        versionName = "2.10.1"
     }
 
     signingConfigs {

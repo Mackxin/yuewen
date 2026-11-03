@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.outlined.Bookmark
+import androidx.compose.material.icons.outlined.BookmarkRemove
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
@@ -70,6 +71,18 @@ enum class ArticleListMode(val key: String, val label: String) {
 }
 
 /**
+ * 卡片右下角那颗按钮的含义。
+ *
+ * 绝大多数列表（首页 / 收藏 / 历史 / 搜索）用默认的 [Bookmark]。
+ * 「稍后读」队列页传 [Queue] —— 那一页上每一条**本来就在队列里**，
+ * 再显示「收藏」既没用又会让人误点，改成「移出稍后读」才是这一页真正需要的那颗按钮。
+ *
+ * 用枚举而不是两个独立的回调参数：两颗按钮的位置、尺寸、点击区域完全一样，
+ * 只有图标和语义不同，用参数化避免在四个 Composable 之间多传一路回调。
+ */
+enum class CardTrailing { Bookmark, Queue }
+
+/**
  * 一条文章卡片。已读/未读通过「标题透明度 + 字重」区分，一眼能看出哪些没看过。
  *
  * ⚠️ v2.6.0 起**去掉了标题左侧的未读圆点**。原先标题行里塞了「圆点 + 8/10dp 间隔」，
@@ -93,10 +106,12 @@ fun ArticleCard(
     onLongClick: (() -> Unit)? = null,
     highlight: String? = null,
     selectionMode: Boolean = false,
-    selected: Boolean = false
+    selected: Boolean = false,
+    /** v2.8：右下角那颗按钮的含义，见 [CardTrailing]。 */
+    trailing: CardTrailing = CardTrailing.Bookmark
 ) {
     if (!selectionMode) {
-        ArticleCardBody(article, mode, onClick, onBookmark, modifier, onLongClick, highlight)
+        ArticleCardBody(article, mode, onClick, onBookmark, trailing, modifier, onLongClick, highlight)
         return
     }
     Row(
@@ -113,6 +128,7 @@ fun ArticleCard(
             mode = mode,
             onClick = onClick,
             onBookmark = onBookmark,
+            trailing = trailing,
             modifier = Modifier.weight(1f),
             onLongClick = onLongClick,
             highlight = highlight
@@ -127,6 +143,7 @@ private fun ArticleCardBody(
     mode: ArticleListMode,
     onClick: () -> Unit,
     onBookmark: () -> Unit,
+    trailing: CardTrailing,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
     highlight: String? = null
@@ -137,9 +154,9 @@ private fun ArticleCardBody(
     val metaColor = cs.onSurfaceVariant.copy(alpha = if (article.isRead) 0.7f else 1f)
 
     when (mode) {
-        ArticleListMode.Compact -> CompactCard(article, titleColor, metaColor, onClick, onBookmark, onLongClick, highlight, modifier)
-        ArticleListMode.Card -> StandardCard(article, titleColor, metaColor, onClick, onBookmark, onLongClick, highlight, modifier)
-        ArticleListMode.Magazine -> MagazineCard(article, titleColor, metaColor, onClick, onBookmark, onLongClick, highlight, modifier)
+        ArticleListMode.Compact -> CompactCard(article, titleColor, metaColor, onClick, onBookmark, trailing, onLongClick, highlight, modifier)
+        ArticleListMode.Card -> StandardCard(article, titleColor, metaColor, onClick, onBookmark, trailing, onLongClick, highlight, modifier)
+        ArticleListMode.Magazine -> MagazineCard(article, titleColor, metaColor, onClick, onBookmark, trailing, onLongClick, highlight, modifier)
     }
 }
 
@@ -178,6 +195,7 @@ private fun CompactCard(
     metaColor: Color,
     onClick: () -> Unit,
     onBookmark: () -> Unit,
+    trailing: CardTrailing,
     onLongClick: (() -> Unit)?,
     highlight: String?,
     modifier: Modifier
@@ -212,7 +230,7 @@ private fun CompactCard(
                 Spacer(Modifier.height(3.dp))
                 MetaLine(article, metaColor)
             }
-            BookmarkButton(article.isBookmarked, onBookmark)
+            TrailingButton(article, trailing, onBookmark)
         }
     }
 }
@@ -227,6 +245,7 @@ private fun StandardCard(
     metaColor: Color,
     onClick: () -> Unit,
     onBookmark: () -> Unit,
+    trailing: CardTrailing,
     onLongClick: (() -> Unit)?,
     highlight: String?,
     modifier: Modifier
@@ -290,7 +309,7 @@ private fun StandardCard(
                     showPlaceholder = false
                 )
             }
-            BookmarkButton(article.isBookmarked, onBookmark)
+            TrailingButton(article, trailing, onBookmark)
         }
     }
 }
@@ -305,6 +324,7 @@ private fun MagazineCard(
     metaColor: Color,
     onClick: () -> Unit,
     onBookmark: () -> Unit,
+    trailing: CardTrailing,
     onLongClick: (() -> Unit)?,
     highlight: String?,
     modifier: Modifier
@@ -378,7 +398,7 @@ private fun MagazineCard(
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                     MetaLine(article, metaColor, modifier = Modifier.weight(1f, fill = false))
-                    BookmarkButton(article.isBookmarked, onBookmark)
+                    TrailingButton(article, trailing, onBookmark)
                 }
             }
         }
@@ -423,14 +443,37 @@ private fun MetaLine(article: Article, color: Color, modifier: Modifier = Modifi
     }
 }
 
+/**
+ * 卡片右下角那颗按钮。语义由 [CardTrailing] 决定：
+ *
+ * - [CardTrailing.Bookmark]：实心 = 已收藏，描边 = 未收藏（本项目的图标语言：
+ *   实心 = 状态 / 强调，描边 = 默认）；
+ * - [CardTrailing.Queue]：一个「书签带减号」，点一下把这篇移出稍后读。
+ *   队列里永远用描边 —— 这一整页都是队列项，条条实心会变成一片主色块，
+ *   反而看不出任何状态差异。
+ */
 @Composable
-private fun BookmarkButton(checked: Boolean, onClick: () -> Unit) {
+private fun TrailingButton(article: Article, kind: CardTrailing, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
+    val icon = when (kind) {
+        CardTrailing.Bookmark ->
+            if (article.isBookmarked) Icons.Filled.Bookmark else Icons.Outlined.Bookmark
+        CardTrailing.Queue -> Icons.Outlined.BookmarkRemove
+    }
+    val desc = when (kind) {
+        CardTrailing.Bookmark -> if (article.isBookmarked) "取消收藏" else "收藏"
+        CardTrailing.Queue -> "移出稍后读"
+    }
+    val tint = when (kind) {
+        CardTrailing.Bookmark ->
+            if (article.isBookmarked) cs.tertiary else cs.onSurfaceVariant.copy(alpha = 0.7f)
+        CardTrailing.Queue -> cs.onSurfaceVariant.copy(alpha = 0.7f)
+    }
     IconButton(onClick = onClick, modifier = Modifier.size(32.dp)) {
         Icon(
-            imageVector = if (checked) Icons.Filled.Bookmark else Icons.Outlined.Bookmark,
-            contentDescription = if (checked) "取消收藏" else "收藏",
-            tint = if (checked) cs.tertiary else cs.onSurfaceVariant.copy(alpha = 0.7f),
+            imageVector = icon,
+            contentDescription = desc,
+            tint = tint,
             modifier = Modifier.size(19.dp)
         )
     }
