@@ -66,6 +66,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -98,7 +99,9 @@ import com.example.yuewen.ui.util.formatRelativeTime
 import com.example.yuewen.ui.util.titleOrDefault
 import com.example.yuewen.ui.viewmodel.HomeRow
 import com.example.yuewen.ui.viewmodel.HomeViewModel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 
 /**
@@ -169,6 +172,36 @@ fun HomeScreen(
     // v1.9：列表状态提到这里，供「双击顶部标题回到顶端」使用
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+
+    // ---------------- v2.12：刷新 = 回到最新 ----------------
+    //
+    // 用户报的「明明设了最新在前，刷新后首页有时候看起来不是」—— 在设备上复现出来的就是它：
+    // 列表用了 `key`（为了让卡片状态不串），而新文章是**插在最前面**的 ——
+    // `LazyColumn` 会锚住「用户当前正在看的那一条」，于是点完刷新，
+    // 屏幕还停在「2小时前 / 3小时前」，最新的几条全在视口**上方**看不见。
+    // 屏幕顶上不是最新的，看起来当然就是「排序不对」。
+    //
+    // 所以刷新成功后要主动回顶。两处细节：
+    // ① 必须先等「首条文章真的换了」再滚 —— 直接滚的话，滚完一拍新数据才落地，
+    //    又被锚下去 added 条，等于白滚一次；
+    // ② 等不到也别卡死（新文章可能被「仅看未读 / 关键词」筛掉了），1.5 秒后照滚 ——
+    //    那种情况下列表根本没被顶下去，回顶是无害的空操作。
+    val refreshAndRevealTop: () -> Unit = {
+        scope.launch {
+            val before = rows.firstItemKey()
+            val added = vm.refreshNow()
+            if (added > 0) {
+                withTimeoutOrNull(1500) {
+                    snapshotFlow { rows.firstItemKey() }.first { it != before }
+                }
+            }
+            if (listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0) {
+                listState.scrollToItem(0)
+            }
+            // 只在真有新东西时提示：什么都没变却说「已更新」是在骗人。
+            if (added > 0) Toast.makeText(context, "新增 $added 篇", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     var actionTarget by remember { mutableStateOf<Article?>(null) }
     var folderTarget by remember { mutableStateOf<Article?>(null) }
@@ -381,7 +414,7 @@ fun HomeScreen(
                             tint = cs.primary,
                             enabled = !isRefreshing,
                             loading = isRefreshing,
-                            onClick = vm::refresh
+                            onClick = refreshAndRevealTop
                         )
                     }
                 }
@@ -427,7 +460,7 @@ fun HomeScreen(
         PullToRefreshBox(
             state = pullState,
             isRefreshing = isRefreshing,
-            onRefresh = vm::refresh,
+            onRefresh = refreshAndRevealTop,
             indicator = {},
             modifier = Modifier.fillMaxSize()
         ) {
@@ -1040,3 +1073,13 @@ private fun ArticleListMode.icon(): ImageVector = when (this) {
     ArticleListMode.Card -> Icons.Outlined.ViewAgenda
     ArticleListMode.Magazine -> Icons.Outlined.ViewStream
 }
+
+/**
+ * 列表里**第一条真正的文章**的 key（跳过「今天 / 昨天」这类分组标题）。
+ *
+ * 只用来判断「刷新之后首条文章有没有换人」，见 refreshAndRevealTop。
+ * 为什么不能直接取 `rows.first()`：按时间分组时第一行永远是 `header_今天`，
+ * 新文章插进来它也不会变 —— 拿它当信号，等于永远等不到。
+ */
+private fun List<HomeRow>.firstItemKey(): String? =
+    firstOrNull { it is HomeRow.Item }?.key

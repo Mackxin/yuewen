@@ -816,6 +816,36 @@ fun main() {
     check("21.24 排序不会丢文章（每种模式都保留全部元素）",
         HomeSortMode.entries.all { sortArticles(bag, it, 5).size == bag.size })
 
+    // ---- v2.12：主键撞了之后也要有确定的顺序 ----
+    //
+    // 三条时间戳完全一样、源一样、标题也一样的文章（批量导入 / 同一个源连着发两条
+    // 就是这么进来的）。在旧的写法下它们是「相等」的，而 `sortedWith` 是**稳定排序**，
+    // 相等项原样保留上游顺序 —— 上游是 `ORDER BY pubDate DESC LIMIT 400`，
+    // SQLite 不保证相等项的顺序，刷新一次就可能换位。
+    // 用户看到的现象是「顺序有时候不一样」，但怎么复现都复现不出来。
+    val twin = listOf(
+        art("L-c", "少数派", "同一个标题", 300),
+        art("L-a", "少数派", "同一个标题", 300),
+        art("L-b", "少数派", "同一个标题", 300)
+    )
+    check("21.25 最新在前：同一时间戳排两次结果一样（与输入顺序无关）",
+        sortArticles(twin, HomeSortMode.TimeDesc, 0).map { it.link } ==
+                sortArticles(twin.reversed(), HomeSortMode.TimeDesc, 0).map { it.link },
+        sortArticles(twin, HomeSortMode.TimeDesc, 0).map { it.link }.toString())
+    check("21.26 最早在前：同一时间戳同样稳定",
+        sortArticles(twin, HomeSortMode.TimeAsc, 0).map { it.link } ==
+                sortArticles(twin.reversed(), HomeSortMode.TimeAsc, 0).map { it.link })
+    check("21.27 按阅源：同源同时间戳也稳定",
+        sortArticles(twin, HomeSortMode.Source, 0).map { it.link } ==
+                sortArticles(twin.reversed(), HomeSortMode.Source, 0).map { it.link })
+    check("21.28 按标题：同名标题也稳定",
+        sortArticles(twin, HomeSortMode.Title, 0).map { it.link } ==
+                sortArticles(twin.reversed(), HomeSortMode.Title, 0).map { it.link })
+    check("21.29 相等项的兜底顺序就是 link 升序（可预期，不是随机）",
+        sortArticles(twin, HomeSortMode.TimeDesc, 0).map { it.link } == listOf("L-a", "L-b", "L-c"))
+    check("21.30 主键不相等时兜底不改变主序（时间仍然说了算）",
+        sortArticles(bag, HomeSortMode.TimeDesc, 0).map { it.link } == listOf("L3", "L5", "L1", "L4", "L2"))
+
     // ==================================================================
     // 22. 配色生成器（v2.3）
     // ==================================================================

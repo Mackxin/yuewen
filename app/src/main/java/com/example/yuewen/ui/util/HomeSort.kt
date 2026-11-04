@@ -40,11 +40,27 @@ enum class HomeSortMode(val key: String, val label: String) {
 fun sortArticles(list: List<Article>, mode: HomeSortMode, seed: Long): List<Article> {
     if (list.size < 2) return list
     return when (mode) {
-        HomeSortMode.TimeDesc -> list.sortedByDescending { it.pubDate }
-        HomeSortMode.TimeAsc -> list.sortedBy { it.pubDate }
+        // ⚠️ v2.12：每一档末尾都补一个 `thenBy { it.link }`，这不是装饰。
+        //
+        // 主键（时间 / 源名 + 时间 / 标题）**会撞**：同一个源在同一秒发两条、
+        // 批量导入时两条共用同一个时间戳、大小写忽略后两个标题只差一个大小写……
+        // 撞了之后 `sortedWith` 是**稳定排序**，谁在前完全取决于**上游给的顺序**，
+        // 也就是那条 SQL（`ORDER BY pubDate DESC LIMIT 400`）的返回顺序。
+        // SQLite 对「排序键相等」的那几条不保证顺序，刷新一次、换一次索引、
+        // 插入顺序一变，这几条就会自己换位置 —— 用户看到的是「顺序有时候不一样」。
+        // link 是主键、全局唯一，拿它兜底之后：**同样的数据，任何时候排出来都一样**。
+        HomeSortMode.TimeDesc -> list.sortedWith(compareByDescending<Article> { it.pubDate }.thenBy { it.link })
+        HomeSortMode.TimeAsc -> list.sortedWith(compareBy<Article> { it.pubDate }.thenBy { it.link })
         // 同源凑一起；组内仍按时间倒序（不然组内顺序会随查询顺序飘）
-        HomeSortMode.Source -> list.sortedWith(compareBy({ it.sourceName }, { -it.pubDate }))
-        HomeSortMode.Title -> list.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+        HomeSortMode.Source ->
+            list.sortedWith(compareBy<Article>({ it.sourceName }, { -it.pubDate }).thenBy { it.link })
+        HomeSortMode.Title ->
+            // 这里的显式 <Article, String> 不是啰嗦：`compareBy(comparator) { }` 这个重载
+            // 有两个泛型参数，接上 `.thenBy { }` 之后类型推断就推不出来了（报
+            // 「not enough information to infer type variable T」），只能手写出来。
+            list.sortedWith(
+                compareBy<Article, String>(String.CASE_INSENSITIVE_ORDER) { it.title }.thenBy { it.link }
+            )
         HomeSortMode.Random -> {
             // 用种子驱动一个确定性随机：同一个 seed 洗出来的顺序永远一样
             val rnd = java.util.Random(seed)

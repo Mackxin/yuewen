@@ -395,18 +395,33 @@ class HomeViewModel(
     }
 
     fun refresh() {
-        viewModelScope.launch {
-            _isRefreshing.value = true
-            try {
-                repo.refreshAll()
-                settings.setLastRefresh(System.currentTimeMillis())
-            } finally {
-                _isRefreshing.value = false
-            }
-            // 刷新完再预加载：这样刚拿到的「新文章」也在缓存范围内。
-            // 放到 finally 之后，预加载慢不会拖着刷新转圈不放。
-            preloader.maybeAutoStart()
+        viewModelScope.launch { refreshNow() }
+    }
+
+    /**
+     * 手动刷新，并把「这次新增了几篇」交回给界面（v2.12）。
+     *
+     * 为什么要有这个返回值：刷新按钮/下拉刷新之后，列表**不会自己跳回顶部** ——
+     * `LazyColumn` 用了 `key`，新文章是「插在最前面」，Compose 会锚住用户当前正在看的
+     * 那一条，于是视口反而被顶下去 N 条。用户点了刷新、屏幕却还停在「2小时前 / 3小时前」，
+     * 第一反应就是「我明明设了最新在前，怎么显示的不是最新的」。
+     * 界面拿到篇数后就能决定：有新东西才滚回顶部并提示，没新东西就别乱动。
+     */
+    suspend fun refreshNow(): Int {
+        _isRefreshing.value = true
+        val added = try {
+            repo.refreshAll().also { settings.setLastRefresh(System.currentTimeMillis()) }
+        } catch (_: Exception) {
+            // 网络异常不该把首页一起带走（原来的写法会把异常抛进 viewModelScope，
+            // 一个连不上的源就可能变成一次崩溃）。返回 0 = 「这次什么都没拿到」。
+            0
+        } finally {
+            _isRefreshing.value = false
         }
+        // 刷新完再预加载：这样刚拿到的「新文章」也在缓存范围内。
+        // 放到 finally 之后，预加载慢不会拖着刷新转圈不放。
+        preloader.maybeAutoStart()
+        return added
     }
 
     fun markAllRead() {
