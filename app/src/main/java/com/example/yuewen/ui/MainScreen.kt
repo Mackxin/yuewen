@@ -2,6 +2,8 @@ package com.example.yuewen.ui
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -64,6 +66,7 @@ import com.example.yuewen.ui.screens.StatsScreen
 import com.example.yuewen.ui.screens.StorageScreen
 import com.example.yuewen.ui.screens.WenjianScreen
 import com.example.yuewen.ui.util.rememberImeDismiss
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -83,6 +86,34 @@ private val BAR_INSET = 64.dp
 
 /** 「正在朗读」悬浮条自身的高度（含上下留白），用于动态加大页面底部空隙。 */
 private val TTS_BAR_HEIGHT = 54.dp
+
+/**
+ * 点底栏切页时，**相邻两页**之间滑一次的时长（毫秒）。
+ *
+ * 240 和底栏高亮块（`PILL_ANIM_MS = 280`）、闻件标签栏（`PillTabRow` 260）同一档 ——
+ * 三处「滑过去」必须是同一种手感，否则同一屏里会有两种速度。
+ * 再长就会觉得「点了半天没反应」，再短就看不出是在滑。
+ */
+private const val PAGE_SLIDE_MS = 240
+
+/**
+ * 每多跨一页，额外补多少时长（毫秒）。
+ *
+ * 跨 2 页 = 240 + 90 = 330ms，跨 3 页 = 420ms。
+ * 为什么要按距离加时：不补的话，跨 3 页和跨 1 页都只给 240ms，
+ * 内容要以 3 倍速横穿 —— 观感是一道糊掉的白影，等于又回到「啪」地一闪。
+ * 补到「每页约 140ms」之后，途经的页面才**看得出是一个一个过去的**。
+ */
+private const val PAGE_SLIDE_PER_STEP_MS = 90
+
+/**
+ * 一次切页最长给多久（毫秒）。超过就压回来。
+ *
+ * 上限的作用是保底「点了立刻有反应」：4 个 Tab 最多跨 3 页，
+ * 420ms 是实测的上限 —— 再长用户会觉得手指点下去以后有延迟。
+ * 这不是「动画时长」，是「最坏情况下还能忍多久」。
+ */
+private const val PAGE_SLIDE_MAX_MS = 420
 
 @Composable
 fun MainScreen() {
@@ -124,6 +155,15 @@ fun MainScreen() {
     val scope = rememberCoroutineScope()
 
     /**
+     * 正在跑的那一段切页动画（v2.13）。
+     *
+     * 连点两个不同的 Tab 时，两段动画会同时在跑、互相拉扯，最后停在哪一页完全看运气。
+     * 记着它，下一次点击先 `cancel()` 掉上一次。
+     * 用 `mutableStateOf` 只是当个可变盒子用，**没有人在组合里读它**，不会引起重组。
+     */
+    val navJob = remember { mutableStateOf<Job?>(null) }
+
+    /**
      * 当前 Tab —— **从 Pager 派生**，不再单独存一份 state（v2.5）。
      *
      * 以前是「两个状态互相回写」：`selectedTab` 变了去滚 pager，pager 停下又回写
@@ -140,20 +180,46 @@ fun MainScreen() {
     /**
      * 切到某个 Tab。
      *
-     * ⚠️ **跨页用瞬切、不用滑动动画**（v2.5 修卡顿）。原因：
-     * `animateScrollToPage(3)` 是连续滚动，会真的把内容从第 0 页一路推过第 1、2 页；
-     * 而 pager 设了 `beyondViewportPageCount = 0`（只组合视口内的页）——
-     * 于是途经的每一页都会被**现场组合**：各自 `viewModel(...)` 新建实例、订阅 Room 流、
-     * 跑一遍排序，全在主线程上。既让人看到「唰地路过阅源」，又明显掉帧。
-     * 相邻页只差一步，动画便宜也好看，保留。
+     * ## 跨页也要真滑过去（v2.13）
+     *
+     * 这里前后试过错三个版本，把弯路记全，免得再走回去：
+     *
+     * | 版本 | 跨页跳转怎么做 | 用户看到的结果 |
+     * |---|---|---|
+     * | v2.5 | `scrollToPage` 瞬切 | 「内容啪地一闪」，底栏高亮块还落后 280ms 才追上来 |
+     * | v2.13 初版 | 先瞬移到**目标前一页**，再滑一步 | 瞬移那一下会**露出中间那一页**整整一屏，然后才滑走 —— 比瞬切更生硬 |
+     * | **现在** | 一路 `animateScrollToPage` 滑过去 | 「唰」地连续滑，高亮块全程跟手 |
+     *
+     * ## 为什么现在敢一路滑过去
+     *
+     * 之前不敢，是因为 Pager 只会组合视口内的页面：滑行途经的第 1、2 页要**现场组合**
+     * （建 ViewModel、订阅 Room、跑排序、量一屏卡片）。一屏动画里塞三页的组合量，
+     * 必然掉帧 —— 而且目标页在数据没到之前会先闪一下**空状态**
+     * （「阅源」页一闪「0 个订阅源」就是它）。
+     *
+     * 现在 [beyondViewportPageCount] 给了 `tabs.size`，四个页**全都常驻组合**，
+     * 滑行时只剩纯位移，一帧组合都不用做。代价是四个页面各挂一份 Room 订阅，
+     * 对一个只有 4 个 Tab 的 App 来说这笔开销完全可以接受 ——
+     * 换来的是「每一次点击都顺」。
+     *
+     * ⚠️ 时长按距离递增（见 [PAGE_SLIDE_PER_STEP_MS]）：跨 3 页若也只给 240ms，
+     * 内容要以 3 倍速横穿，观感是一道糊掉的白影，等于白改。
      */
     val goTo: (Screen) -> Unit = { tab ->
         val from = pagerState.currentPage
         val idx = tabs.indexOf(tab)
         if (idx >= 0 && idx != from) {
-            scope.launch {
-                if (abs(idx - from) > 1) pagerState.scrollToPage(idx)
-                else pagerState.animateScrollToPage(idx)
+            // 连点不同 Tab 时，后一次要把前一次的动画掐掉，否则两段动画互相拉扯，
+            // 最后停在哪一页完全看运气
+            navJob.value?.cancel()
+            navJob.value = scope.launch {
+                val distance = abs(idx - from)
+                val durationMs = (PAGE_SLIDE_MS + (distance - 1) * PAGE_SLIDE_PER_STEP_MS)
+                    .coerceAtMost(PAGE_SLIDE_MAX_MS)
+                pagerState.animateScrollToPage(
+                    page = idx,
+                    animationSpec = tween(durationMs, easing = FastOutSlowInEasing)
+                )
             }
         }
     }
@@ -274,9 +340,22 @@ fun MainScreen() {
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
-            // 不再同时预组合左右两页：以前 3 个页面各自挂着 Room 查询 + 长列表，
-            // 白耗 CPU 又抢主线程。现在只组合看得见的页面，滑动更跟手。
-            beyondViewportPageCount = 0,
+            // v2.13：从 0（v2.5 是 1）改成 `tabs.size` —— **四个页全部常驻组合**。
+            //
+            // 这笔账 v2.5 算反了方向：压到 0 省下的是「看不见的页面的待机开销」，
+            // 付出的却是**切换那一瞬间**的主线程成本 —— 目标页要在拖拽/滑行过程中现场组合
+            // （建 ViewModel、订阅 Room、跑排序、量一屏卡片）。
+            // 更糟的是数据没到位之前它会先画**空状态**：切到「阅源」会先闪一下
+            // 「0 个订阅源 / 还没有任何阅源」，几百毫秒后才变成真的 12 个源。
+            // 用户看到的就是「卡 + 闪」，而这一下正是他眼睛盯着的那一下。
+            //
+            // 中间试过 1（左右各养一页）：只有相邻两页受益，跨页跳转依然要现场组合。
+            // 既然是 4 个固定 Tab、跨页是常见操作（首页 → 设置一步到位），
+            // 干脆全养：滑行时零组合，只剩纯位移。
+            //
+            // ⚠️ 别因为「怕费电」再把它压回去 —— 4 个页面常驻是这个 App 的既定成本，
+            // 压下去省的那点待机开销，会以「每次点击都掉帧」的形式还给用户。
+            beyondViewportPageCount = tabs.size,
             // ⚠️ key 必须是「可存进 Bundle 的类型」（String/Int/Parcelable/Serializable）。
             // 之前写成 key = { tabs[it] }，传的是 Screen 对象（Home/Search…），
             // Pager 底层会拿它去注册 SaveableStateProvider → 抛

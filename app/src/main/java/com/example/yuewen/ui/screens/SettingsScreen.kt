@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -997,796 +998,816 @@ fun SettingsScreen(
         if (showCloud) cloudStatus = vm.cloudStatuses()
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().background(cs.background).verticalScroll(rememberScrollState())
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().background(cs.background)
     ) {
-        Row(
-            // v2.11：18 → 12，跟卡片左边缘、跟每个组标题同一条竖线。
-            // 页面上原本「设置」「阅读与朗读」「字号」三行字分别齐 18 / 22 / 30，
-            // 三条左边界 = 没有网格。现在只剩 12（卡片、标题）和 30（卡内内容）两列。
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("设置", style = MaterialTheme.typography.titleLarge, color = cs.onBackground)
-        }
-
-        // ==================== 1. 阅读与朗读 ====================
-        GroupTitle("阅读与朗读")
-        Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            Column {
-                ChoiceRow(
-                    label = "字号",
-                    options = ReaderSizeLabels,
-                    selectedIndex = readerSize.coerceIn(0, ReaderSizeLabels.lastIndex),
-                    onSelect = { vm.setReaderSize(it) }
-                )
-                Div()
-                ChoiceRow(
-                    label = "行距",
-                    options = ReaderSpacing.entries.map { it.label },
-                    selectedIndex = ReaderSpacing.of(readerSpacing).ordinal,
-                    onSelect = { vm.setReaderSpacing(ReaderSpacing.entries[it].key) }
-                )
-                Div()
-                ChoiceRow(
-                    label = "字体",
-                    options = ReaderFont.entries.map { it.label },
-                    selectedIndex = ReaderFont.of(readerFont).ordinal,
-                    onSelect = { vm.setReaderFont(ReaderFont.entries[it].key) }
-                )
-                Div()
-                ChoiceRow(
-                    label = "底色",
-                    options = ReaderTheme.entries.map { it.label },
-                    selectedIndex = ReaderTheme.of(readerTheme).ordinal,
-                    onSelect = { vm.setReaderTheme(ReaderTheme.entries[it].key) }
-                )
-                CaptionMore(
-                    summary = "详情页右上角的 Aa 按钮也能改这几项。",
-                    detail = "「米黄纸感」和「墨夜」就是原来的正念阅读模式，只是换了名字。"
-                )
-                Div()
-                ChoiceRow(
-                    label = "朗读语速",
-                    options = TtsRateLabels,
-                    selectedIndex = ttsRate.coerceIn(0, TtsRateLabels.lastIndex),
-                    onSelect = { vm.setTtsRate(it) }
-                )
-                Caption("朗读过程中改的话，从下一句开始生效。")
-                Div()
-                SettingsRow(
-                    "朗读时显示通知栏控制",
-                    trailing = { Switch(checked = ttsNotify, onCheckedChange = { vm.setTtsNotify(it) }) }
-                )
-                CaptionMore(
-                    summary = "朗读时挂一条通知，锁屏也能暂停 / 继续 / 停止。",
-                    detail = "详情页顶部还会浮出一条「回到文章」，点一下直接跳回正文。"
-                )
-                // v2.11：「阅读文章时显示底部导航栏」搬去了「底部导航栏」那一组。
-                // 它说的是**底栏**的事，和「朗读」没有半点关系，原先挤在这里纯粹是历史原因；
-                // 而底栏的三项（图标 / 未读数字 / 阅读时是否显示）本来就该放在一起看。
-                Div()
-                // v2.2：打开原文用哪个浏览器。
-                // 「跟随系统」永远排第一 —— 它是默认值，也是出问题时的退路。
-                // 存的浏览器被卸载了 → 菜单末尾补一条「已卸载」让用户知道为什么名字对不上。
-                DropdownRowWithExtra(
-                    label = "打开原文的浏览器",
-                    value = browserLabel,
-                    expanded = browserExpanded,
-                    onExpandedChange = { browserExpanded = it },
-                    options = listOf(BrowserLauncher.SYSTEM to "跟随系统") +
-                            browsers.map { it.pkg to it.label },
-                    selectedKey = browserPkg,
-                    onPick = { vm.setBrowserPkg(it) },
-                    extraItems = if (browserPkg.isNotBlank() && browsers.none { it.pkg == browserPkg })
-                        listOf(browserPkg to "$browserPkg（已卸载，点击恢复默认）")
-                    else emptyList(),
-                    onPickExtra = { vm.setBrowserPkg(BrowserLauncher.SYSTEM) }
-                )
-                CaptionMore(
-                    summary = "选「跟随系统」就交给安卓自己决定用哪个应用打开。",
-                    detail = "选了具体浏览器之后，中途把它卸载了会自动退回系统默认，不会出现点「原文」打不开的情况。"
-                )
+        item {
+            Row(
+                // v2.11：18 → 12，跟卡片左边缘、跟每个组标题同一条竖线。
+                // 页面上原本「设置」「阅读与朗读」「字号」三行字分别齐 18 / 22 / 30，
+                // 三条左边界 = 没有网格。现在只剩 12（卡片、标题）和 30（卡内内容）两列。
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("设置", style = MaterialTheme.typography.titleLarge, color = cs.onBackground)
             }
         }
 
-        // ==================== 2. 外观 ====================
-        GroupTitle("外观")
-        Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            Column {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("外观主题", style = MaterialTheme.typography.bodyLarge, color = cs.onSurface)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("light" to "浅色", "system" to "自动", "dark" to "深色").forEach { (v, l) ->
-                            val sel = theme == v
-                            Surface(
-                                onClick = { vm.setTheme(v) },
-                                color = if (sel) cs.primary.copy(alpha = 0.16f) else cs.surfaceContainerHigh,
-                                shape = MaterialTheme.shapes.extraSmall
-                            ) {
-                                Text(
-                                    l,
-                                    color = if (sel) cs.primary else cs.onSurface,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    // v2.11：12/7 → 10/5，和 [ChoiceRow] 的胶囊完全同一套尺寸。
-                                    // 原来这排（浅色/自动/深色）比下面「字号」「行距」的胶囊
-                                    // 各高一头、宽一头，同一张卡里出现两种大小的胶囊，很显乱。
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                                )
-                            }
-                        }
-                    }
+        item {
+            // ==================== 1. 阅读与朗读 ====================
+            GroupTitle("阅读与朗读")
+            Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                Column {
+                    ChoiceRow(
+                        label = "字号",
+                        options = ReaderSizeLabels,
+                        selectedIndex = readerSize.coerceIn(0, ReaderSizeLabels.lastIndex),
+                        onSelect = { vm.setReaderSize(it) }
+                    )
+                    Div()
+                    ChoiceRow(
+                        label = "行距",
+                        options = ReaderSpacing.entries.map { it.label },
+                        selectedIndex = ReaderSpacing.of(readerSpacing).ordinal,
+                        onSelect = { vm.setReaderSpacing(ReaderSpacing.entries[it].key) }
+                    )
+                    Div()
+                    ChoiceRow(
+                        label = "字体",
+                        options = ReaderFont.entries.map { it.label },
+                        selectedIndex = ReaderFont.of(readerFont).ordinal,
+                        onSelect = { vm.setReaderFont(ReaderFont.entries[it].key) }
+                    )
+                    Div()
+                    ChoiceRow(
+                        label = "底色",
+                        options = ReaderTheme.entries.map { it.label },
+                        selectedIndex = ReaderTheme.of(readerTheme).ordinal,
+                        onSelect = { vm.setReaderTheme(ReaderTheme.entries[it].key) }
+                    )
+                    CaptionMore(
+                        summary = "详情页右上角的 Aa 按钮也能改这几项。",
+                        detail = "「米黄纸感」和「墨夜」就是原来的正念阅读模式，只是换了名字。"
+                    )
+                    Div()
+                    ChoiceRow(
+                        label = "朗读语速",
+                        options = TtsRateLabels,
+                        selectedIndex = ttsRate.coerceIn(0, TtsRateLabels.lastIndex),
+                        onSelect = { vm.setTtsRate(it) }
+                    )
+                    Caption("朗读过程中改的话，从下一句开始生效。")
+                    Div()
+                    SettingsRow(
+                        "朗读时显示通知栏控制",
+                        trailing = { Switch(checked = ttsNotify, onCheckedChange = { vm.setTtsNotify(it) }) }
+                    )
+                    CaptionMore(
+                        summary = "朗读时挂一条通知，锁屏也能暂停 / 继续 / 停止。",
+                        detail = "详情页顶部还会浮出一条「回到文章」，点一下直接跳回正文。"
+                    )
+                    // v2.11：「阅读文章时显示底部导航栏」搬去了「底部导航栏」那一组。
+                    // 它说的是**底栏**的事，和「朗读」没有半点关系，原先挤在这里纯粹是历史原因；
+                    // 而底栏的三项（图标 / 未读数字 / 阅读时是否显示）本来就该放在一起看。
+                    Div()
+                    // v2.2：打开原文用哪个浏览器。
+                    // 「跟随系统」永远排第一 —— 它是默认值，也是出问题时的退路。
+                    // 存的浏览器被卸载了 → 菜单末尾补一条「已卸载」让用户知道为什么名字对不上。
+                    DropdownRowWithExtra(
+                        label = "打开原文的浏览器",
+                        value = browserLabel,
+                        expanded = browserExpanded,
+                        onExpandedChange = { browserExpanded = it },
+                        options = listOf(BrowserLauncher.SYSTEM to "跟随系统") +
+                                browsers.map { it.pkg to it.label },
+                        selectedKey = browserPkg,
+                        onPick = { vm.setBrowserPkg(it) },
+                        extraItems = if (browserPkg.isNotBlank() && browsers.none { it.pkg == browserPkg })
+                            listOf(browserPkg to "$browserPkg（已卸载，点击恢复默认）")
+                        else emptyList(),
+                        onPickExtra = { vm.setBrowserPkg(BrowserLauncher.SYSTEM) }
+                    )
+                    CaptionMore(
+                        summary = "选「跟随系统」就交给安卓自己决定用哪个应用打开。",
+                        detail = "选了具体浏览器之后，中途把它卸载了会自动退回系统默认，不会出现点「原文」打不开的情况。"
+                    )
                 }
-                Div()
-                // ---- v2.3：配色方案 ----
-                // 点一下立刻换色，不需要「应用」按钮（MainActivity 直接订阅这个值）。
-                SubTitle("配色方案")
-                PalettePicker(
-                    selected = themePalette,
-                    customHue = customHue,
-                    customSat = customSat,
-                    onPick = { vm.setThemePalette(it) },
-                    onHue = { vm.setCustomHue(it) },
-                    onSat = { vm.setCustomSat(it) }
-                )
-                CaptionMore(
-                    summary = "点一下就换，整个界面立刻生效，不需要再点「应用」。",
-                    detail = "上面这排是内置配色；选「自定义」可以自己拖色相和鲜艳度，拖到哪就是哪。"
-                )
-                Div()
-                DropdownRow(
-                    label = "界面字体大小",
-                    value = fontLabel,
-                    expanded = fontExpanded,
-                    onExpandedChange = { fontExpanded = it },
-                    options = listOf("standard" to "标准", "small" to "小", "large" to "大"),
-                    selectedKey = font,
-                    onPick = { vm.setFont(it) }
-                )
-                Div()
-                ChoiceRow(
-                    label = "列表布局",
-                    options = ArticleListMode.entries.map { it.label },
-                    selectedIndex = listMode.ordinal,
-                    onSelect = { vm.setListMode(ArticleListMode.entries[it]) }
-                )
-                CaptionMore(
-                    summary = "紧凑省地方、卡片有缩略图、杂志图最大。",
-                    detail = "首页右上角的布局按钮也能随时切换（可以在下面把那个按钮关掉）。"
-                )
-
-                // ---- v2.11：原来的「个性」组并进这里 ----
-                // 「个性」单独一张卡只剩「应用内名称 / 桌面图标名称」两行，为两行开一个
-                // 组标题、单独占一段留白，反而是全页最碎的地方。而这两项改的本来就是
-                // 「长什么样」，和外观是同一类东西 —— 合进来之后少一个组标题、少一次视线跳。
-                Div()
-                SubTitle("应用名称与图标")
-                // 应用内名称：首页大标题、「关于」页都用它。留空回落到默认「阅闻」。
-                SettingsRow(
-                    "应用内名称",
-                    trailing = { ValueTrailing(titleOrDefault(appTitle)) },
-                    onClick = { titleEditing = true }
-                )
-                Caption("首页大标题和「关于」页都用它；留空用默认的「阅闻」。")
-                Div()
-                // 桌面图标名：系统不允许运行时改 android:label，
-                // 只能预置若干个 activity-alias，在这里挑一个（本质是切换 alias）。
-                DropdownRow(
-                    label = "桌面图标名称",
-                    value = iconNameOf(iconIdx),
-                    expanded = iconExpanded,
-                    onExpandedChange = { iconExpanded = it },
-                    options = IconNames.mapIndexed { i, name -> "$i" to name },
-                    selectedKey = "$iconIdx",
-                    onPick = { key ->
-                        val i = key.toIntOrNull() ?: return@DropdownRow
-                        val ok = vm.setIconNameIndex(i)
-                        Toast.makeText(
-                            context,
-                            if (ok) "已切换，桌面图标名可能要一两秒才刷新"
-                            else "切换失败：部分系统不允许改桌面图标名",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                )
-                CaptionMore(
-                    summary = "桌面图标底下那行字，系统不允许随便改。",
-                    detail = "只能从这几个里挑。想改 App 里的标题用上面那个「应用内名称」，那个可以随便写。"
-                )
             }
         }
 
-        // ==================== 3. 首页 ====================
-        //
-        // v2.11：从「外观」里拆出来的。原来「外观」一张卡装着主题、配色、字体、列表布局、
-        // 首页顶栏、首页筛选、关键词、默认筛选、排序、底栏未读数字**十项**,跨了五个小节，
-        // 想改「首页筛选」得先滚过一整屏的配色和字体。拆开之后每个组只回答一个问题：
-        // 外观 = 长什么样；首页 = 首页上有什么；底部导航栏 = 底栏怎么显示。
-        GroupTitle("首页")
-        Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            Column {
-                // 首页顶栏：三个按钮加副标题，都能单独关掉
-                SubTitle("顶栏")
-                SettingsRow(
-                    "显示「布局」按钮",
-                    trailing = { Switch(checked = homeShowLayout, onCheckedChange = { vm.setHomeShowLayout(it) }) }
-                )
-                Div()
-                SettingsRow(
-                    "显示「刷新」按钮",
-                    trailing = { Switch(checked = homeShowRefresh, onCheckedChange = { vm.setHomeShowRefresh(it) }) }
-                )
-                Div()
-                SettingsRow(
-                    "显示副标题",
-                    trailing = { Switch(checked = homeShowSubtitle, onCheckedChange = { vm.setHomeShowSubtitle(it) }) }
-                )
-                Caption("三个按钮都能单独关；关掉刷新按钮后，下拉仍然可以刷新。")
-                Div()
-                SettingsRow(
-                    "首页顶部筛选图标",
-                    trailing = { Switch(checked = homeFilterIcons, onCheckedChange = { vm.setHomeFilterIcons(it) }) }
-                )
-                Caption("两个小图标分别是「仅看未读 / 显示全部」和「全部标为已读」。")
-
-                // ---- v2.0.2 / v2.5：首页那两行筛选胶囊各自的开关 ----
-                // v2.5：原来是一把三档开关（分类 / 阅源 / 都显示），但它描述的其实就是
-                // 「两行各自要不要显示」，读起来绕。拆成两个独立开关，和上面「显示副标题」
-                // 是同一套心智模型，四种组合也都能表达。
-                Div()
-                SubTitle("筛选")
-                SettingsRow(
-                    "显示「分类」行",
-                    trailing = { Switch(checked = showCategoryRow, onCheckedChange = { vm.setHomeShowCategoryRow(it) }) }
-                )
-                Div()
-                SettingsRow(
-                    "显示「阅源」行",
-                    trailing = { Switch(checked = showSourceRow, onCheckedChange = { vm.setHomeShowSourceRow(it) }) }
-                )
-                CaptionMore(
-                    summary = "「分类」选大类，「阅源」选具体来源，两个条件叠加生效。",
-                    detail = "关掉某一行会同时清空那一级的筛选，不会留下看不见的条件。"
-                )
-
-                // ---- v2.4：首页关键词胶囊 ----
-                // 和「屏蔽关键词」放在一起容易混，所以刻意隔开：那个是「不想看什么」，
-                // 这个是「想只看什么」，一正一反，各自在自己那一组里。
-                Div()
-                SettingsRow(
-                    "首页关键词",
-                    trailing = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                if (homeKeywords.isEmpty()) "未设置" else "${homeKeywords.size} 个",
-                                color = cs.onSurfaceVariant
-                            )
-                            Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = cs.onSurfaceVariant)
-                        }
-                    },
-                    onClick = { showKeywords = !showKeywords }
-                )
-                if (showKeywords) {
+        item {
+            // ==================== 2. 外观 ====================
+            GroupTitle("外观")
+            Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                Column {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        OutlinedTextField(
-                            value = homeKwInput,
-                            onValueChange = { homeKwInput = it },
-                            label = { Text("添加关键词") },
-                            placeholder = { Text("如：手机") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        TextButton(onClick = {
-                            if (homeKwInput.isNotBlank()) {
-                                vm.addHomeKeyword(homeKwInput.trim())
-                                homeKwInput = ""
-                                // 加完就收键盘：下面那排词才是用户接下来要看的东西
-                                dismissIme()
-                            }
-                        }) { Text("添加") }
-                    }
-                    if (homeKeywords.isNotEmpty()) {
-                        FlowRow(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            homeKeywords.forEach { kw ->
+                        Text("外观主题", style = MaterialTheme.typography.bodyLarge, color = cs.onSurface)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf("light" to "浅色", "system" to "自动", "dark" to "深色").forEach { (v, l) ->
+                                val sel = theme == v
                                 Surface(
-                                    color = cs.primaryContainer,
-                                    shape = RoundedCornerShape(20.dp),
-                                    modifier = Modifier.clickable { vm.removeHomeKeyword(kw) }
+                                    onClick = { vm.setTheme(v) },
+                                    color = if (sel) cs.primary.copy(alpha = 0.16f) else cs.surfaceContainerHigh,
+                                    shape = MaterialTheme.shapes.extraSmall
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
-                                        Text(kw, color = cs.onPrimaryContainer, style = MaterialTheme.typography.labelMedium)
-                                        Spacer(Modifier.width(4.dp))
-                                        Icon(Icons.Filled.Close, contentDescription = "移除", tint = cs.onPrimaryContainer, modifier = Modifier.size(14.dp))
-                                    }
+                                    Text(
+                                        l,
+                                        color = if (sel) cs.primary else cs.onSurface,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        // v2.11：12/7 → 10/5，和 [ChoiceRow] 的胶囊完全同一套尺寸。
+                                        // 原来这排（浅色/自动/深色）比下面「字号」「行距」的胶囊
+                                        // 各高一头、宽一头，同一张卡里出现两种大小的胶囊，很显乱。
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                    )
                                 }
                             }
                         }
-                        Caption("点一下某个词就能删掉它（最多 $HOME_KEYWORD_LIMIT 个）。")
                     }
-                }
-                CaptionMore(
-                    summary = "填的词会变成首页顶部的胶囊，点一下只看含这个词的文章。",
-                    detail = "匹配范围是标题 / 摘要 / 正文，再点一次取消。和分类、阅源是叠加关系，三个条件同时生效。"
-                )
-                Div()
-                SettingsRow(
-                    "显示关键词行",
-                    trailing = { Switch(checked = homeShowKeywords, onCheckedChange = { vm.setHomeShowKeywords(it) }) }
-                )
-                Caption("关掉只是不显示，填过的词会留着，随时能再打开。")
-                Div()
-                // ⚠️⚠️ v2.6.0 修：选项**不再按顶栏那两行的开关过滤**。
-                // 原写法是「分类行关着就不列分类项、阅源行关着就不列阅源项」，本意是「免得选了不生效」。
-                // 但如果两行都关掉（只用关键词筛，用户就是这么用的），整个 `options` 就是**空的** ——
-                // 点开下拉只剩右侧那个「全部」值，看着就是坏的（用户反馈「点了只有全部选项」）。
-                // 现在两级永远都列全：至少保证「全部（不限分类）」和「全部阅源」两项在，
-                // 而且订阅过的每个分类 / 每个源都能直接选。
-                // 代价是「选了不生效」的可能回来了 —— 这条改由下面那行 Caption 明确交代。
-                // 取值用带前缀的 key（"c:" / "s:"）区分两级 —— 分类名和阅源名可能重名，
-                // 光看字符串分不出用户点的是哪一级。
-                DropdownRow(
-                    label = "打开时默认停在",
-                    value = defaultFilterLabel,
-                    expanded = defaultExpanded,
-                    onExpandedChange = { defaultExpanded = it },
-                    options = buildList {
-                        add("c:推荐" to "全部（不限分类）")
-                        categories.forEach { add("c:$it" to it) }
-                        add("s:" to "全部阅源")
-                        sources.filter { it.enabled }.map { it.name }.distinct().forEach { add("s:$it" to it) }
-                    },
-                    // 显示哪一级就以哪一级为准：阅源更「具体」，所以优先显示它
-                    selectedKey = when {
-                        showSourceRow && homeDefaultSource.isNotBlank() -> "s:$homeDefaultSource"
-                        showCategoryRow -> "c:$homeDefaultCategory"
-                        else -> "s:$homeDefaultSource"
-                    },
-                    onPick = { key ->
-                        if (key.startsWith("c:")) vm.setHomeDefaultCategory(key.removePrefix("c:"))
-                        else vm.setHomeDefaultSource(key.removePrefix("s:"))
-                    }
-                )
-                CaptionMore(
-                    summary = "「开机默认」，不是「记住上次」—— 中途点别的胶囊不影响它。",
-                    detail = "选项来自你订阅的源和它们的分类。如果上面「显示「分类」行 / 显示「阅源」行」是关着的，" +
-                        "对应那一级选了也不会生效，想用就先把它打开。"
-                )
-
-                // ---- v2.2：文章怎么排 ----
-                //
-                // v2.11：这里原来还有个 SubTitle("排序")，删掉了 —— 它底下只有
-                // 「排序方式」一行，而那一行的标签本身就把意思说完，小标题等于复读一遍。
-                // 判断标准：小标题底下**至少两行**才值得加，否则就是多一层噪声。
-                Div()
-                // 用下拉而不是横排胶囊：五个档位横排会挤出屏幕（「最新在前」这种四字标签尤其占地方）
-                DropdownRow(
-                    label = "排序方式",
-                    value = homeSort.label,
-                    expanded = sortExpanded,
-                    onExpandedChange = { sortExpanded = it },
-                    options = HomeSortMode.entries.map { it.key to it.label },
-                    selectedKey = homeSort.key,
-                    onPick = { vm.setHomeSort(HomeSortMode.of(it)) }
-                )
-                // 「换一批」只在随机排序下才出现 —— 别的排序下它没有任何意义，
-                // 摆在那里只会让人以为点了会重排
-                if (homeSort == HomeSortMode.Random) {
                     Div()
-                    SettingsRow(
-                        "重新洗牌",
-                        trailing = { Text("换一批", color = cs.primary) },
-                        onClick = { vm.reshuffle() }
-                    )
-                }
-                Caption(
-                    when (homeSort) {
-                        HomeSortMode.TimeDesc -> "默认：最新的文章排在最前面，按「今天 / 昨天 / 本周 / 更早」分组。"
-                        HomeSortMode.TimeAsc -> "最早的文章排在最前面，适合补着看历史。同样会按日期分组。"
-                        HomeSortMode.Random -> "每次打开顺序都一样（种子固定），点「换一批」才会重洗。这样下拉刷新不会把列表打乱。"
-                        HomeSortMode.Source -> "同一个阅源的文章凑在一起，组内按时间倒序。想「先把这个源的看完」就用它。"
-                        HomeSortMode.Title -> "按标题字典序排。记得标题里几个字、忘了是哪个源的，用它翻更快。"
-                    }
-                )
-            }
-        }
-
-        // ==================== 4. 底部导航栏 ====================
-        //
-        // v2.11：新开的一组。这三项原来散在两处 ——「阅读文章时显示底部导航栏」在
-        // 「阅读与朗读」里（它跟朗读毫无关系，纯粹是早先随手放的），「未读数字」在
-        // 「外观」的最末尾（得滚过整屏配色、字体、排序才找得到）。
-        // 而用户想调底栏的时候，脑子里就一个问题：「底栏长什么样」。三项并排给他看。
-        GroupTitle("底部导航栏")
-        Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            Column {
-                SettingsRow(
-                    "显示图标",
-                    trailing = { Switch(checked = barIcons, onCheckedChange = { vm.setBarIcons(it) }) }
-                )
-                CaptionMore(
-                    summary = "默认只留文字：四个短词并排，比四个图标更好认。",
-                    detail = "打开之后每个词前面加一个图标（首页 / 闻件 / 阅源 / 设置）。" +
-                        "底栏高度不会因为这一项变化。"
-                )
-                Div()
-                SettingsRow(
-                    "显示未读数字",
-                    trailing = { Switch(checked = unreadBadge, onCheckedChange = { vm.setUnreadBadge(it) }) }
-                )
-                // v2.11：文案里原来写「底栏「首页」**图标上**显示未读条数」——
-                // 图标现在默认是关的，数字其实是跟在「首页」两个字后面，改成「后面」。
-                Caption("打开后底栏「首页」后面显示未读条数，最多 99+。")
-                Div()
-                SettingsRow(
-                    "阅读文章时也显示",
-                    trailing = { Switch(checked = showBarInReader, onCheckedChange = { vm.setShowBarInReader(it) }) }
-                )
-                Caption("关掉就是全屏沉浸阅读，只能靠返回键退出。")
-            }
-        }
-
-        // ==================== 5. 阅源与刷新 ====================
-        GroupTitle("阅源与刷新")
-        Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            Column {
-                // v2.0：订阅源的完整管理搬去了「阅源」页（底部第三个 Tab）。
-                // 设置里再挂一份完整列表，等于同一个东西两种说法，用户反而不知道哪边是真的。
-                SettingsRow(
-                    "我的阅源",
-                    trailing = { Text("${sources.size} 个 · 去管理", color = cs.primary) },
-                    onClick = onOpenSources
-                )
-                Caption("添加、改名、改分类、单独刷新、测试全部，都在「阅源」页里。")
-                Div()
-                SettingsRow(
-                    "添加阅源",
-                    trailing = { Icon(Icons.Filled.Add, contentDescription = null, tint = cs.primary) },
-                    onClick = onOpenAddSource
-                )
-                Div()
-                DropdownRow(
-                    label = "刷新频率",
-                    value = refreshLabel,
-                    expanded = refreshExpanded,
-                    onExpandedChange = { refreshExpanded = it },
-                    options = listOf(0, 15, 30, 60, 120).map { m ->
-                        "$m" to when (m) {
-                            0 -> "关闭"; 15 -> "每 15 分钟"; 30 -> "每 30 分钟"
-                            60 -> "每 1 小时"; 120 -> "每 2 小时"; else -> "$m 分钟"
-                        }
-                    },
-                    selectedKey = "$refresh",
-                    onPick = { vm.setRefreshMinutes(it.toIntOrNull() ?: 30) }
-                )
-                Caption("关掉之后就只在你手动下拉时刷新。")
-                Div()
-                SettingsRow(
-                    "打开 App 自动刷新",
-                    trailing = { Switch(checked = refreshOnLaunch, onCheckedChange = { vm.setRefreshOnLaunch(it) }) }
-                )
-                Caption("距上次刷新不到 5 分钟会自动跳过。")
-                Div()
-                SettingsRow(
-                    "打开文章自动标为已读",
-                    trailing = { Switch(checked = autoread, onCheckedChange = { vm.setAutoRead(it) }) }
-                )
-                // v2.8：和上面那条是**一对** —— 它认的就是「打开文章」这个动作，
-                // 上面关掉之后这条永远没机会触发，所以跟着一起藏起来，
-                // 而不是留一个永远不生效的开关让人猜。（同款做法见「离线阅读」里的 Wi-Fi 那条。）
-                if (autoread) {
-                    Div()
-                    SettingsRow(
-                        "读完的文章自动移出稍后读",
-                        trailing = { Switch(checked = queueAutoDequeue, onCheckedChange = { vm.setQueueAutoDequeue(it) }) }
+                    // ---- v2.3：配色方案 ----
+                    // 点一下立刻换色，不需要「应用」按钮（MainActivity 直接订阅这个值）。
+                    SubTitle("配色方案")
+                    PalettePicker(
+                        selected = themePalette,
+                        customHue = customHue,
+                        customSat = customSat,
+                        onPick = { vm.setThemePalette(it) },
+                        onHue = { vm.setCustomHue(it) },
+                        onSat = { vm.setCustomSat(it) }
                     )
                     CaptionMore(
-                        summary = "打开一篇在稍后读里的文章，它会自动从队列里消失，并弹一条可「撤销」的提示。",
-                        detail = "关掉就一直是「读过但还没清」的状态（队列页会显示有几篇已读），什么时候清由你自己决定。"
+                        summary = "点一下就换，整个界面立刻生效，不需要再点「应用」。",
+                        detail = "上面这排是内置配色；选「自定义」可以自己拖色相和鲜艳度，拖到哪就是哪。"
+                    )
+                    Div()
+                    DropdownRow(
+                        label = "界面字体大小",
+                        value = fontLabel,
+                        expanded = fontExpanded,
+                        onExpandedChange = { fontExpanded = it },
+                        options = listOf("standard" to "标准", "small" to "小", "large" to "大"),
+                        selectedKey = font,
+                        onPick = { vm.setFont(it) }
+                    )
+                    Div()
+                    ChoiceRow(
+                        label = "列表布局",
+                        options = ArticleListMode.entries.map { it.label },
+                        selectedIndex = listMode.ordinal,
+                        onSelect = { vm.setListMode(ArticleListMode.entries[it]) }
+                    )
+                    CaptionMore(
+                        summary = "紧凑省地方、卡片有缩略图、杂志图最大。",
+                        detail = "首页右上角的布局按钮也能随时切换（可以在下面把那个按钮关掉）。"
+                    )
+
+                    // ---- v2.11：原来的「个性」组并进这里 ----
+                    // 「个性」单独一张卡只剩「应用内名称 / 桌面图标名称」两行，为两行开一个
+                    // 组标题、单独占一段留白，反而是全页最碎的地方。而这两项改的本来就是
+                    // 「长什么样」，和外观是同一类东西 —— 合进来之后少一个组标题、少一次视线跳。
+                    Div()
+                    SubTitle("应用名称与图标")
+                    // 应用内名称：首页大标题、「关于」页都用它。留空回落到默认「阅闻」。
+                    SettingsRow(
+                        "应用内名称",
+                        trailing = { ValueTrailing(titleOrDefault(appTitle)) },
+                        onClick = { titleEditing = true }
+                    )
+                    Caption("首页大标题和「关于」页都用它；留空用默认的「阅闻」。")
+                    Div()
+                    // 桌面图标名：系统不允许运行时改 android:label，
+                    // 只能预置若干个 activity-alias，在这里挑一个（本质是切换 alias）。
+                    DropdownRow(
+                        label = "桌面图标名称",
+                        value = iconNameOf(iconIdx),
+                        expanded = iconExpanded,
+                        onExpandedChange = { iconExpanded = it },
+                        options = IconNames.mapIndexed { i, name -> "$i" to name },
+                        selectedKey = "$iconIdx",
+                        onPick = { key ->
+                            val i = key.toIntOrNull() ?: return@DropdownRow
+                            val ok = vm.setIconNameIndex(i)
+                            Toast.makeText(
+                                context,
+                                if (ok) "已切换，桌面图标名可能要一两秒才刷新"
+                                else "切换失败：部分系统不允许改桌面图标名",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    )
+                    CaptionMore(
+                        summary = "桌面图标底下那行字，系统不允许随便改。",
+                        detail = "只能从这几个里挑。想改 App 里的标题用上面那个「应用内名称」，那个可以随便写。"
                     )
                 }
             }
         }
 
-        // ==================== 6. 离线阅读 ====================
-        GroupTitle("离线阅读")
-        Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            Column {
-                SettingsRow(
-                    "自动预加载正文",
-                    trailing = { Switch(checked = preloadAuto, onCheckedChange = { vm.setPreloadAuto(it) }) }
-                )
-                CaptionMore(
-                    summary = "打开后会把每篇的完整正文抓下来，没网也能读全文。",
-                    detail = "默认关闭。抓的是正文而不是 feed 里那句摘要，所以每次刷新之后还要多跑一会儿。"
-                )
-                if (preloadAuto) {
+        item {
+            // ==================== 3. 首页 ====================
+            //
+            // v2.11：从「外观」里拆出来的。原来「外观」一张卡装着主题、配色、字体、列表布局、
+            // 首页顶栏、首页筛选、关键词、默认筛选、排序、底栏未读数字**十项**,跨了五个小节，
+            // 想改「首页筛选」得先滚过一整屏的配色和字体。拆开之后每个组只回答一个问题：
+            // 外观 = 长什么样；首页 = 首页上有什么；底部导航栏 = 底栏怎么显示。
+            GroupTitle("首页")
+            Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                Column {
+                    // 首页顶栏：三个按钮加副标题，都能单独关掉
+                    SubTitle("顶栏")
+                    SettingsRow(
+                        "显示「布局」按钮",
+                        trailing = { Switch(checked = homeShowLayout, onCheckedChange = { vm.setHomeShowLayout(it) }) }
+                    )
                     Div()
                     SettingsRow(
-                        "仅在 Wi-Fi 下预加载",
-                        trailing = { Switch(checked = preloadWifiOnly, onCheckedChange = { vm.setPreloadWifiOnly(it) }) }
+                        "显示「刷新」按钮",
+                        trailing = { Switch(checked = homeShowRefresh, onCheckedChange = { vm.setHomeShowRefresh(it) }) }
                     )
-                    Caption("抓正文要逐篇访问网页，比抓 RSS 重得多，不该在流量上偷跑。")
-                }
-                Div()
-                // 一次性把还没正文的文章全抓下来（手动不受上面两个开关限制：点了就是要跑）
-                SettingsRow(
-                    "立即缓存全部正文",
-                    trailing = {
-                        Text(
-                            when {
-                                preload.running -> "${preload.done} / ${preload.total}"
-                                cache.pendingPreload > 0 -> "待缓存 ${cache.pendingPreload} 篇"
-                                cache.fullTextCount > 0 -> "已全部缓存"
-                                else -> "点此开始"
-                            },
-                            color = if (preload.running || cache.pendingPreload > 0) cs.primary else cs.onSurfaceVariant
-                        )
-                    },
-                    onClick = { if (preload.running) vm.cancelPreload() else vm.startPreload() }
-                )
-                if (preload.running) {
-                    LinearProgressIndicator(
-                        progress = {
-                            if (preload.total > 0) preload.done.toFloat() / preload.total else 0f
+                    Div()
+                    SettingsRow(
+                        "显示副标题",
+                        trailing = { Switch(checked = homeShowSubtitle, onCheckedChange = { vm.setHomeShowSubtitle(it) }) }
+                    )
+                    Caption("三个按钮都能单独关；关掉刷新按钮后，下拉仍然可以刷新。")
+                    Div()
+                    SettingsRow(
+                        "首页顶部筛选图标",
+                        trailing = { Switch(checked = homeFilterIcons, onCheckedChange = { vm.setHomeFilterIcons(it) }) }
+                    )
+                    Caption("两个小图标分别是「仅看未读 / 显示全部」和「全部标为已读」。")
+
+                    // ---- v2.0.2 / v2.5：首页那两行筛选胶囊各自的开关 ----
+                    // v2.5：原来是一把三档开关（分类 / 阅源 / 都显示），但它描述的其实就是
+                    // 「两行各自要不要显示」，读起来绕。拆成两个独立开关，和上面「显示副标题」
+                    // 是同一套心智模型，四种组合也都能表达。
+                    Div()
+                    SubTitle("筛选")
+                    SettingsRow(
+                        "显示「分类」行",
+                        trailing = { Switch(checked = showCategoryRow, onCheckedChange = { vm.setHomeShowCategoryRow(it) }) }
+                    )
+                    Div()
+                    SettingsRow(
+                        "显示「阅源」行",
+                        trailing = { Switch(checked = showSourceRow, onCheckedChange = { vm.setHomeShowSourceRow(it) }) }
+                    )
+                    CaptionMore(
+                        summary = "「分类」选大类，「阅源」选具体来源，两个条件叠加生效。",
+                        detail = "关掉某一行会同时清空那一级的筛选，不会留下看不见的条件。"
+                    )
+
+                    // ---- v2.4：首页关键词胶囊 ----
+                    // 和「屏蔽关键词」放在一起容易混，所以刻意隔开：那个是「不想看什么」，
+                    // 这个是「想只看什么」，一正一反，各自在自己那一组里。
+                    Div()
+                    SettingsRow(
+                        "首页关键词",
+                        trailing = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    if (homeKeywords.isEmpty()) "未设置" else "${homeKeywords.size} 个",
+                                    color = cs.onSurfaceVariant
+                                )
+                                Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = cs.onSurfaceVariant)
+                            }
                         },
-                        color = cs.primary,
-                        trackColor = cs.surfaceContainerHigh,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 18.dp)
-                            .height(4.dp)
-                            .clip(MaterialTheme.shapes.extraSmall)
+                        onClick = { showKeywords = !showKeywords }
                     )
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 12.dp, top = 8.dp, bottom = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "正在后台抓正文，可以随时中断（已抓到的会保留）…",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = cs.onSurfaceVariant,
-                            modifier = Modifier.weight(1f)
+                    if (showKeywords) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = homeKwInput,
+                                onValueChange = { homeKwInput = it },
+                                label = { Text("添加关键词") },
+                                placeholder = { Text("如：手机") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            TextButton(onClick = {
+                                if (homeKwInput.isNotBlank()) {
+                                    vm.addHomeKeyword(homeKwInput.trim())
+                                    homeKwInput = ""
+                                    // 加完就收键盘：下面那排词才是用户接下来要看的东西
+                                    dismissIme()
+                                }
+                            }) { Text("添加") }
+                        }
+                        if (homeKeywords.isNotEmpty()) {
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                homeKeywords.forEach { kw ->
+                                    Surface(
+                                        color = cs.primaryContainer,
+                                        shape = RoundedCornerShape(20.dp),
+                                        modifier = Modifier.clickable { vm.removeHomeKeyword(kw) }
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                                            Text(kw, color = cs.onPrimaryContainer, style = MaterialTheme.typography.labelMedium)
+                                            Spacer(Modifier.width(4.dp))
+                                            Icon(Icons.Filled.Close, contentDescription = "移除", tint = cs.onPrimaryContainer, modifier = Modifier.size(14.dp))
+                                        }
+                                    }
+                                }
+                            }
+                            Caption("点一下某个词就能删掉它（最多 $HOME_KEYWORD_LIMIT 个）。")
+                        }
+                    }
+                    CaptionMore(
+                        summary = "填的词会变成首页顶部的胶囊，点一下只看含这个词的文章。",
+                        detail = "匹配范围是标题 / 摘要 / 正文，再点一次取消。和分类、阅源是叠加关系，三个条件同时生效。"
+                    )
+                    Div()
+                    SettingsRow(
+                        "显示关键词行",
+                        trailing = { Switch(checked = homeShowKeywords, onCheckedChange = { vm.setHomeShowKeywords(it) }) }
+                    )
+                    Caption("关掉只是不显示，填过的词会留着，随时能再打开。")
+                    Div()
+                    // ⚠️⚠️ v2.6.0 修：选项**不再按顶栏那两行的开关过滤**。
+                    // 原写法是「分类行关着就不列分类项、阅源行关着就不列阅源项」，本意是「免得选了不生效」。
+                    // 但如果两行都关掉（只用关键词筛，用户就是这么用的），整个 `options` 就是**空的** ——
+                    // 点开下拉只剩右侧那个「全部」值，看着就是坏的（用户反馈「点了只有全部选项」）。
+                    // 现在两级永远都列全：至少保证「全部（不限分类）」和「全部阅源」两项在，
+                    // 而且订阅过的每个分类 / 每个源都能直接选。
+                    // 代价是「选了不生效」的可能回来了 —— 这条改由下面那行 Caption 明确交代。
+                    // 取值用带前缀的 key（"c:" / "s:"）区分两级 —— 分类名和阅源名可能重名，
+                    // 光看字符串分不出用户点的是哪一级。
+                    DropdownRow(
+                        label = "打开时默认停在",
+                        value = defaultFilterLabel,
+                        expanded = defaultExpanded,
+                        onExpandedChange = { defaultExpanded = it },
+                        options = buildList {
+                            add("c:推荐" to "全部（不限分类）")
+                            categories.forEach { add("c:$it" to it) }
+                            add("s:" to "全部阅源")
+                            sources.filter { it.enabled }.map { it.name }.distinct().forEach { add("s:$it" to it) }
+                        },
+                        // 显示哪一级就以哪一级为准：阅源更「具体」，所以优先显示它
+                        selectedKey = when {
+                            showSourceRow && homeDefaultSource.isNotBlank() -> "s:$homeDefaultSource"
+                            showCategoryRow -> "c:$homeDefaultCategory"
+                            else -> "s:$homeDefaultSource"
+                        },
+                        onPick = { key ->
+                            if (key.startsWith("c:")) vm.setHomeDefaultCategory(key.removePrefix("c:"))
+                            else vm.setHomeDefaultSource(key.removePrefix("s:"))
+                        }
+                    )
+                    CaptionMore(
+                        summary = "「开机默认」，不是「记住上次」—— 中途点别的胶囊不影响它。",
+                        detail = "选项来自你订阅的源和它们的分类。如果上面「显示「分类」行 / 显示「阅源」行」是关着的，" +
+                            "对应那一级选了也不会生效，想用就先把它打开。"
+                    )
+
+                    // ---- v2.2：文章怎么排 ----
+                    //
+                    // v2.11：这里原来还有个 SubTitle("排序")，删掉了 —— 它底下只有
+                    // 「排序方式」一行，而那一行的标签本身就把意思说完，小标题等于复读一遍。
+                    // 判断标准：小标题底下**至少两行**才值得加，否则就是多一层噪声。
+                    Div()
+                    // 用下拉而不是横排胶囊：五个档位横排会挤出屏幕（「最新在前」这种四字标签尤其占地方）
+                    DropdownRow(
+                        label = "排序方式",
+                        value = homeSort.label,
+                        expanded = sortExpanded,
+                        onExpandedChange = { sortExpanded = it },
+                        options = HomeSortMode.entries.map { it.key to it.label },
+                        selectedKey = homeSort.key,
+                        onPick = { vm.setHomeSort(HomeSortMode.of(it)) }
+                    )
+                    // 「换一批」只在随机排序下才出现 —— 别的排序下它没有任何意义，
+                    // 摆在那里只会让人以为点了会重排
+                    if (homeSort == HomeSortMode.Random) {
+                        Div()
+                        SettingsRow(
+                            "重新洗牌",
+                            trailing = { Text("换一批", color = cs.primary) },
+                            onClick = { vm.reshuffle() }
                         )
-                        TextButton(onClick = { vm.cancelPreload() }) { Text("取消") }
                     }
+                    Caption(
+                        when (homeSort) {
+                            HomeSortMode.TimeDesc -> "默认：最新的文章排在最前面，按「今天 / 昨天 / 本周 / 更早」分组。"
+                            HomeSortMode.TimeAsc -> "最早的文章排在最前面，适合补着看历史。同样会按日期分组。"
+                            HomeSortMode.Random -> "每次打开顺序都一样（种子固定），点「换一批」才会重洗。这样下拉刷新不会把列表打乱。"
+                            HomeSortMode.Source -> "同一个阅源的文章凑在一起，组内按时间倒序。想「先把这个源的看完」就用它。"
+                            HomeSortMode.Title -> "按标题字典序排。记得标题里几个字、忘了是哪个源的，用它翻更快。"
+                        }
+                    )
                 }
-                Caption(
-                    buildString {
-                        append("已缓存 ${cache.fullTextCount} 篇正文")
-                        if (cache.fullTextChars > 0) append("（约 ${cache.fullTextChars / 1000} 千字）")
-                        append("。\n出门前点一次「立即缓存全部正文」，路上没信号也能读。")
-                        if (preloadAuto && preloadWifiOnly && !onWifi) {
-                            append("\n当前不在 Wi-Fi：自动预加载会等连上 Wi-Fi 再跑。")
-                        }
-                        if (!preload.running && preload.saved > 0) {
-                            append("\n上一轮新缓存了 ${preload.saved} 篇。")
-                        }
-                    }
-                )
             }
         }
 
-        // ==================== 7. 提醒与屏蔽 ====================
-        GroupTitle("提醒与屏蔽")
-        Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            Column {
-                SettingsRow(
-                    "新内容提醒",
-                    trailing = { Switch(checked = notify, onCheckedChange = { vm.setNotify(it) }) }
-                )
-                Div()
-                // v2.8：每日摘要。
-                //
-                // 刻意**不**跟着上面那个「新内容提醒」走：那条是后台刷新顺手报个数，
-                // 这条是 App 主动在固定时刻找上门，两者的心理预期不一样 ——
-                // 用户完全可能想「刷新完告诉我一声，但别每天早上打扰我」，反之亦然。
-                SettingsRow(
-                    "每日摘要",
-                    trailing = { Switch(checked = digestEnabled, onCheckedChange = { vm.setDigestEnabled(it) }) }
-                )
-                if (digestEnabled) {
-                    TimePresetRow(
-                        label = "推送时间",
-                        presets = DailyDigest.PRESETS,
-                        hour = digestHour,
-                        minute = digestMinute,
-                        onSelect = { h, m -> vm.setDigestTime(h, m) }
+        item {
+            // ==================== 4. 底部导航栏 ====================
+            //
+            // v2.11：新开的一组。这三项原来散在两处 ——「阅读文章时显示底部导航栏」在
+            // 「阅读与朗读」里（它跟朗读毫无关系，纯粹是早先随手放的），「未读数字」在
+            // 「外观」的最末尾（得滚过整屏配色、字体、排序才找得到）。
+            // 而用户想调底栏的时候，脑子里就一个问题：「底栏长什么样」。三项并排给他看。
+            GroupTitle("底部导航栏")
+            Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                Column {
+                    SettingsRow(
+                        "显示图标",
+                        trailing = { Switch(checked = barIcons, onCheckedChange = { vm.setBarIcons(it) }) }
                     )
                     CaptionMore(
-                        summary = "每天到点汇总一条：今天有多少新内容、队列里还压着几篇。",
-                        detail = "没有新内容、队列也空的时候不会推送 —— 与其准时响一声让你点开发现什么都没有，" +
-                                "不如安静一天。\n\n" +
-                                "推送时刻是在 App 冷启动时补排的，所以改完设置不用等；" +
-                                "但如果系统把 App 强行停掉（比如手动「强制停止」），" +
-                                "需要重新打开一次 App 才会继续推送。\n\n" +
-                                "这条通知走的是独立频道，可以在系统设置里单独关掉，" +
-                                "不影响上面的「新内容提醒」。"
+                        summary = "默认只留文字：四个短词并排，比四个图标更好认。",
+                        detail = "打开之后每个词前面加一个图标（首页 / 闻件 / 阅源 / 设置）。" +
+                            "底栏高度不会因为这一项变化。"
                     )
+                    Div()
+                    SettingsRow(
+                        "显示未读数字",
+                        trailing = { Switch(checked = unreadBadge, onCheckedChange = { vm.setUnreadBadge(it) }) }
+                    )
+                    // v2.11：文案里原来写「底栏「首页」**图标上**显示未读条数」——
+                    // 图标现在默认是关的，数字其实是跟在「首页」两个字后面，改成「后面」。
+                    Caption("打开后底栏「首页」后面显示未读条数，最多 99+。")
+                    Div()
+                    SettingsRow(
+                        "阅读文章时也显示",
+                        trailing = { Switch(checked = showBarInReader, onCheckedChange = { vm.setShowBarInReader(it) }) }
+                    )
+                    Caption("关掉就是全屏沉浸阅读，只能靠返回键退出。")
                 }
-                Div()
-                SettingsRow(
-                    "不想看的内容",
-                    trailing = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            val n = blockedSources.size + blockedKeywords.size
-                            if (n > 0) Text("$n 项", color = cs.onSurfaceVariant)
-                            Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = cs.onSurfaceVariant)
-                        }
-                    },
-                    onClick = { showBlock = !showBlock }
-                )
-                if (showBlock) {
-                    SubTitle("屏蔽来源")
-                    if (sources.isEmpty()) {
-                        Text(
-                            "暂无可屏蔽的来源",
-                            color = cs.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(horizontal = 18.dp)
+            }
+        }
+
+        item {
+            // ==================== 5. 阅源与刷新 ====================
+            GroupTitle("阅源与刷新")
+            Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                Column {
+                    // v2.0：订阅源的完整管理搬去了「阅源」页（底部第三个 Tab）。
+                    // 设置里再挂一份完整列表，等于同一个东西两种说法，用户反而不知道哪边是真的。
+                    SettingsRow(
+                        "我的阅源",
+                        trailing = { Text("${sources.size} 个 · 去管理", color = cs.primary) },
+                        onClick = onOpenSources
+                    )
+                    Caption("添加、改名、改分类、单独刷新、测试全部，都在「阅源」页里。")
+                    Div()
+                    SettingsRow(
+                        "添加阅源",
+                        trailing = { Icon(Icons.Filled.Add, contentDescription = null, tint = cs.primary) },
+                        onClick = onOpenAddSource
+                    )
+                    Div()
+                    DropdownRow(
+                        label = "刷新频率",
+                        value = refreshLabel,
+                        expanded = refreshExpanded,
+                        onExpandedChange = { refreshExpanded = it },
+                        options = listOf(0, 15, 30, 60, 120).map { m ->
+                            "$m" to when (m) {
+                                0 -> "关闭"; 15 -> "每 15 分钟"; 30 -> "每 30 分钟"
+                                60 -> "每 1 小时"; 120 -> "每 2 小时"; else -> "$m 分钟"
+                            }
+                        },
+                        selectedKey = "$refresh",
+                        onPick = { vm.setRefreshMinutes(it.toIntOrNull() ?: 30) }
+                    )
+                    Caption("关掉之后就只在你手动下拉时刷新。")
+                    Div()
+                    SettingsRow(
+                        "打开 App 自动刷新",
+                        trailing = { Switch(checked = refreshOnLaunch, onCheckedChange = { vm.setRefreshOnLaunch(it) }) }
+                    )
+                    Caption("距上次刷新不到 5 分钟会自动跳过。")
+                    Div()
+                    SettingsRow(
+                        "打开文章自动标为已读",
+                        trailing = { Switch(checked = autoread, onCheckedChange = { vm.setAutoRead(it) }) }
+                    )
+                    // v2.8：和上面那条是**一对** —— 它认的就是「打开文章」这个动作，
+                    // 上面关掉之后这条永远没机会触发，所以跟着一起藏起来，
+                    // 而不是留一个永远不生效的开关让人猜。（同款做法见「离线阅读」里的 Wi-Fi 那条。）
+                    if (autoread) {
+                        Div()
+                        SettingsRow(
+                            "读完的文章自动移出稍后读",
+                            trailing = { Switch(checked = queueAutoDequeue, onCheckedChange = { vm.setQueueAutoDequeue(it) }) }
+                        )
+                        CaptionMore(
+                            summary = "打开一篇在稍后读里的文章，它会自动从队列里消失，并弹一条可「撤销」的提示。",
+                            detail = "关掉就一直是「读过但还没清」的状态（队列页会显示有几篇已读），什么时候清由你自己决定。"
                         )
                     }
-                    sources.forEach { src ->
-                        val blocked = blockedSources.contains(src.name)
+                }
+            }
+        }
+
+        item {
+            // ==================== 6. 离线阅读 ====================
+            GroupTitle("离线阅读")
+            Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                Column {
+                    SettingsRow(
+                        "自动预加载正文",
+                        trailing = { Switch(checked = preloadAuto, onCheckedChange = { vm.setPreloadAuto(it) }) }
+                    )
+                    CaptionMore(
+                        summary = "打开后会把每篇的完整正文抓下来，没网也能读全文。",
+                        detail = "默认关闭。抓的是正文而不是 feed 里那句摘要，所以每次刷新之后还要多跑一会儿。"
+                    )
+                    if (preloadAuto) {
+                        Div()
                         SettingsRow(
-                            src.name,
-                            trailing = {
-                                Switch(checked = blocked, onCheckedChange = {
-                                    if (it) vm.addBlockedSource(src.name) else vm.removeBlockedSource(src.name)
-                                })
+                            "仅在 Wi-Fi 下预加载",
+                            trailing = { Switch(checked = preloadWifiOnly, onCheckedChange = { vm.setPreloadWifiOnly(it) }) }
+                        )
+                        Caption("抓正文要逐篇访问网页，比抓 RSS 重得多，不该在流量上偷跑。")
+                    }
+                    Div()
+                    // 一次性把还没正文的文章全抓下来（手动不受上面两个开关限制：点了就是要跑）
+                    SettingsRow(
+                        "立即缓存全部正文",
+                        trailing = {
+                            Text(
+                                when {
+                                    preload.running -> "${preload.done} / ${preload.total}"
+                                    cache.pendingPreload > 0 -> "待缓存 ${cache.pendingPreload} 篇"
+                                    cache.fullTextCount > 0 -> "已全部缓存"
+                                    else -> "点此开始"
+                                },
+                                color = if (preload.running || cache.pendingPreload > 0) cs.primary else cs.onSurfaceVariant
+                            )
+                        },
+                        onClick = { if (preload.running) vm.cancelPreload() else vm.startPreload() }
+                    )
+                    if (preload.running) {
+                        LinearProgressIndicator(
+                            progress = {
+                                if (preload.total > 0) preload.done.toFloat() / preload.total else 0f
+                            },
+                            color = cs.primary,
+                            trackColor = cs.surfaceContainerHigh,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 18.dp)
+                                .height(4.dp)
+                                .clip(MaterialTheme.shapes.extraSmall)
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 12.dp, top = 8.dp, bottom = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "正在后台抓正文，可以随时中断（已抓到的会保留）…",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = cs.onSurfaceVariant,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(onClick = { vm.cancelPreload() }) { Text("取消") }
+                        }
+                    }
+                    Caption(
+                        buildString {
+                            append("已缓存 ${cache.fullTextCount} 篇正文")
+                            if (cache.fullTextChars > 0) append("（约 ${cache.fullTextChars / 1000} 千字）")
+                            append("。\n出门前点一次「立即缓存全部正文」，路上没信号也能读。")
+                            if (preloadAuto && preloadWifiOnly && !onWifi) {
+                                append("\n当前不在 Wi-Fi：自动预加载会等连上 Wi-Fi 再跑。")
                             }
+                            if (!preload.running && preload.saved > 0) {
+                                append("\n上一轮新缓存了 ${preload.saved} 篇。")
+                            }
+                        }
+                    )
+                }
+            }
+        }
+
+        item {
+            // ==================== 7. 提醒与屏蔽 ====================
+            GroupTitle("提醒与屏蔽")
+            Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                Column {
+                    SettingsRow(
+                        "新内容提醒",
+                        trailing = { Switch(checked = notify, onCheckedChange = { vm.setNotify(it) }) }
+                    )
+                    Div()
+                    // v2.8：每日摘要。
+                    //
+                    // 刻意**不**跟着上面那个「新内容提醒」走：那条是后台刷新顺手报个数，
+                    // 这条是 App 主动在固定时刻找上门，两者的心理预期不一样 ——
+                    // 用户完全可能想「刷新完告诉我一声，但别每天早上打扰我」，反之亦然。
+                    SettingsRow(
+                        "每日摘要",
+                        trailing = { Switch(checked = digestEnabled, onCheckedChange = { vm.setDigestEnabled(it) }) }
+                    )
+                    if (digestEnabled) {
+                        TimePresetRow(
+                            label = "推送时间",
+                            presets = DailyDigest.PRESETS,
+                            hour = digestHour,
+                            minute = digestMinute,
+                            onSelect = { h, m -> vm.setDigestTime(h, m) }
+                        )
+                        CaptionMore(
+                            summary = "每天到点汇总一条：今天有多少新内容、队列里还压着几篇。",
+                            detail = "没有新内容、队列也空的时候不会推送 —— 与其准时响一声让你点开发现什么都没有，" +
+                                    "不如安静一天。\n\n" +
+                                    "推送时刻是在 App 冷启动时补排的，所以改完设置不用等；" +
+                                    "但如果系统把 App 强行停掉（比如手动「强制停止」），" +
+                                    "需要重新打开一次 App 才会继续推送。\n\n" +
+                                    "这条通知走的是独立频道，可以在系统设置里单独关掉，" +
+                                    "不影响上面的「新内容提醒」。"
                         )
                     }
                     Div()
-                    SubTitle("屏蔽关键词")
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = kwInput,
-                            onValueChange = { kwInput = it },
-                            label = { Text("添加关键词") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        TextButton(onClick = {
-                            if (kwInput.isNotBlank()) {
-                                vm.addBlockedKeyword(kwInput.trim())
-                                kwInput = ""
-                                // v2.4：加完收键盘，别让它一直挡着下面那排已屏蔽的词
-                                dismissIme()
+                    SettingsRow(
+                        "不想看的内容",
+                        trailing = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                val n = blockedSources.size + blockedKeywords.size
+                                if (n > 0) Text("$n 项", color = cs.onSurfaceVariant)
+                                Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = cs.onSurfaceVariant)
                             }
-                        }) { Text("添加") }
-                    }
-                    if (blockedKeywords.isNotEmpty()) {
-                        FlowRow(
+                        },
+                        onClick = { showBlock = !showBlock }
+                    )
+                    if (showBlock) {
+                        SubTitle("屏蔽来源")
+                        if (sources.isEmpty()) {
+                            Text(
+                                "暂无可屏蔽的来源",
+                                color = cs.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(horizontal = 18.dp)
+                            )
+                        }
+                        sources.forEach { src ->
+                            val blocked = blockedSources.contains(src.name)
+                            SettingsRow(
+                                src.name,
+                                trailing = {
+                                    Switch(checked = blocked, onCheckedChange = {
+                                        if (it) vm.addBlockedSource(src.name) else vm.removeBlockedSource(src.name)
+                                    })
+                                }
+                            )
+                        }
+                        Div()
+                        SubTitle("屏蔽关键词")
+                        Row(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            blockedKeywords.forEach { kw ->
-                                Surface(
-                                    color = cs.errorContainer,
-                                    shape = RoundedCornerShape(20.dp),
-                                    modifier = Modifier.clickable { vm.removeBlockedKeyword(kw) }
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
-                                        Text(kw, color = cs.onErrorContainer, style = MaterialTheme.typography.labelMedium)
-                                        Spacer(Modifier.width(4.dp))
-                                        Icon(Icons.Filled.Close, contentDescription = "移除", tint = cs.onErrorContainer, modifier = Modifier.size(14.dp))
+                            OutlinedTextField(
+                                value = kwInput,
+                                onValueChange = { kwInput = it },
+                                label = { Text("添加关键词") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            TextButton(onClick = {
+                                if (kwInput.isNotBlank()) {
+                                    vm.addBlockedKeyword(kwInput.trim())
+                                    kwInput = ""
+                                    // v2.4：加完收键盘，别让它一直挡着下面那排已屏蔽的词
+                                    dismissIme()
+                                }
+                            }) { Text("添加") }
+                        }
+                        if (blockedKeywords.isNotEmpty()) {
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                blockedKeywords.forEach { kw ->
+                                    Surface(
+                                        color = cs.errorContainer,
+                                        shape = RoundedCornerShape(20.dp),
+                                        modifier = Modifier.clickable { vm.removeBlockedKeyword(kw) }
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                                            Text(kw, color = cs.onErrorContainer, style = MaterialTheme.typography.labelMedium)
+                                            Spacer(Modifier.width(4.dp))
+                                            Icon(Icons.Filled.Close, contentDescription = "移除", tint = cs.onErrorContainer, modifier = Modifier.size(14.dp))
+                                        }
                                     }
                                 }
                             }
                         }
+                        Spacer(Modifier.height(8.dp))
                     }
-                    Spacer(Modifier.height(8.dp))
                 }
             }
         }
 
-        // ==================== 8. 数据 ====================
-        GroupTitle("数据")
-        Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            Column {
-                // v2.11：分两小段 —— 「备份与迁移」是「把数据搬去别处」，
-                // 「存储与统计」是「这台机器上的东西」。原来五条平铺在一起，
-                // 「阅读统计」「缓存管理」夹在两条备份之间，找备份入口要先扫一遍。
-                //
-                // 行尾颜色也统一了：原来「云端备份」「订阅迁移」是主色、
-                // 另外三条是灰的，同一种「点进去」的行却两种色，看着像有的能点有的不能。
-                // 现在的规则是：主色只留给「动作文字」（去管理 / 换一批 / 点此开始），
-                // 这里五条都是「当前状态」的说明，一律用次要色。
-                SubTitle("备份与迁移")
-                SettingsRow(
-                    "备份与恢复",
-                    trailing = { Text("导出 / 恢复", color = cs.onSurfaceVariant) },
-                    onClick = { showBackup = true }
-                )
-                // v2.11：「本机现有 12 个阅源 · …」从行尾挪到这里。
-                // 行尾那块位置只装得下四五个字，这句有二十几个字，
-                // 挤在右边会折成两行、或者把标签压没（见 [SettingsRow] 的注释）。
-                // 说明本来就是放这种细节的地方，而且它是多行会长高的，不会破坏行高节奏。
-                Caption(
-                    buildString {
-                        if (summary.isNotBlank()) append("本机现有：$summary。\n")
-                        append("换手机、重装时导入这一个文件就够了。")
-                    }
-                )
-                Div()
-                SettingsRow(
-                    "云端备份",
-                    trailing = { Text("Gist / 网盘 / 本地文件夹", color = cs.onSurfaceVariant) },
-                    onClick = { showCloud = true }
-                )
-                Caption("传到远端或别的文件夹，换机时不用先找到那个 JSON 文件。")
-                Div()
-                SettingsRow(
-                    "订阅迁移（OPML）",
-                    trailing = { Text("导出 / 导入订阅源", color = cs.onSurfaceVariant) },
-                    onClick = { showMigrate = true }
-                )
-                Div()
-                SubTitle("存储与统计")
-                SettingsRow(
-                    "阅读统计",
-                    trailing = { Text("已读 / 来源排行", color = cs.onSurfaceVariant) },
-                    onClick = onOpenStats
-                )
-                Div()
-                SettingsRow(
-                    "缓存管理",
-                    trailing = { Text("图片 / 文章 / 正文", color = cs.onSurfaceVariant) },
-                    onClick = onOpenStorage
-                )
+        item {
+            // ==================== 8. 数据 ====================
+            GroupTitle("数据")
+            Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                Column {
+                    // v2.11：分两小段 —— 「备份与迁移」是「把数据搬去别处」，
+                    // 「存储与统计」是「这台机器上的东西」。原来五条平铺在一起，
+                    // 「阅读统计」「缓存管理」夹在两条备份之间，找备份入口要先扫一遍。
+                    //
+                    // 行尾颜色也统一了：原来「云端备份」「订阅迁移」是主色、
+                    // 另外三条是灰的，同一种「点进去」的行却两种色，看着像有的能点有的不能。
+                    // 现在的规则是：主色只留给「动作文字」（去管理 / 换一批 / 点此开始），
+                    // 这里五条都是「当前状态」的说明，一律用次要色。
+                    SubTitle("备份与迁移")
+                    SettingsRow(
+                        "备份与恢复",
+                        trailing = { Text("导出 / 恢复", color = cs.onSurfaceVariant) },
+                        onClick = { showBackup = true }
+                    )
+                    // v2.11：「本机现有 12 个阅源 · …」从行尾挪到这里。
+                    // 行尾那块位置只装得下四五个字，这句有二十几个字，
+                    // 挤在右边会折成两行、或者把标签压没（见 [SettingsRow] 的注释）。
+                    // 说明本来就是放这种细节的地方，而且它是多行会长高的，不会破坏行高节奏。
+                    Caption(
+                        buildString {
+                            if (summary.isNotBlank()) append("本机现有：$summary。\n")
+                            append("换手机、重装时导入这一个文件就够了。")
+                        }
+                    )
+                    Div()
+                    SettingsRow(
+                        "云端备份",
+                        trailing = { Text("Gist / 网盘 / 本地文件夹", color = cs.onSurfaceVariant) },
+                        onClick = { showCloud = true }
+                    )
+                    Caption("传到远端或别的文件夹，换机时不用先找到那个 JSON 文件。")
+                    Div()
+                    SettingsRow(
+                        "订阅迁移（OPML）",
+                        trailing = { Text("导出 / 导入订阅源", color = cs.onSurfaceVariant) },
+                        onClick = { showMigrate = true }
+                    )
+                    Div()
+                    SubTitle("存储与统计")
+                    SettingsRow(
+                        "阅读统计",
+                        trailing = { Text("已读 / 来源排行", color = cs.onSurfaceVariant) },
+                        onClick = onOpenStats
+                    )
+                    Div()
+                    SettingsRow(
+                        "缓存管理",
+                        trailing = { Text("图片 / 文章 / 正文", color = cs.onSurfaceVariant) },
+                        onClick = onOpenStorage
+                    )
+                }
             }
         }
 
-        // ==================== 9. 帮助与关于 ====================
-        GroupTitle("帮助与关于")
-        Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            Column {
-                SettingsRow(
-                    "使用手册 / 新手指南",
-                    // 右侧原来还有一行小字「产品定位 · 上手 · 常见问题」，
-                    // 属于「把目录塞进目录」，去掉更干净；只在没读过时留一个「新」提示。
-                    trailing = {
-                        if (!guideSeen) {
-                            Surface(color = cs.primary, shape = MaterialTheme.shapes.extraSmall) {
-                                Text(
-                                    "新",
-                                    color = cs.onPrimary,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
-                                )
+        item {
+            // ==================== 9. 帮助与关于 ====================
+            GroupTitle("帮助与关于")
+            Surface(color = cs.surface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                Column {
+                    SettingsRow(
+                        "使用手册 / 新手指南",
+                        // 右侧原来还有一行小字「产品定位 · 上手 · 常见问题」，
+                        // 属于「把目录塞进目录」，去掉更干净；只在没读过时留一个「新」提示。
+                        trailing = {
+                            if (!guideSeen) {
+                                Surface(color = cs.primary, shape = MaterialTheme.shapes.extraSmall) {
+                                    Text(
+                                        "新",
+                                        color = cs.onPrimary,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                    )
+                                }
                             }
-                        }
-                    },
-                    onClick = onOpenGuide
-                )
-                Div()
-                SettingsRow(
-                    "关于${titleOrDefault(appTitle)}",
-                    trailing = { Text("v${BuildConfig.VERSION_NAME}", color = cs.onSurfaceVariant) },
-                    onClick = onOpenAbout
-                )
+                        },
+                        onClick = onOpenGuide
+                    )
+                    Div()
+                    SettingsRow(
+                        "关于${titleOrDefault(appTitle)}",
+                        trailing = { Text("v${BuildConfig.VERSION_NAME}", color = cs.onSurfaceVariant) },
+                        onClick = onOpenAbout
+                    )
+                }
             }
+            // v2.7.3：底栏是浮动胶囊、内容从它下面穿过 —— 底部留白由这一页自己承担
+            //（父层不再压 padding，压了就穿不过去）。24dp 是原本的收尾留白，另加底栏高度。
+            Spacer(Modifier.height(bottomInset + 24.dp))
         }
-        // v2.7.3：底栏是浮动胶囊、内容从它下面穿过 —— 底部留白由这一页自己承担
-        //（父层不再压 padding，压了就穿不过去）。24dp 是原本的收尾留白，另加底栏高度。
-        Spacer(Modifier.height(bottomInset + 24.dp))
     }
 
     // ---------------- v2.0：备份 / 恢复 ----------------
