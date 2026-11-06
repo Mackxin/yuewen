@@ -6,6 +6,17 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!--
+      v2.14：设置 →「检查更新」下载到新 apk 后，要用系统安装器装上。
+      这是**普通权限**（安装时自动授予，没有运行时弹窗），但它只是第一道门：
+      真正拦住安装的是用户级的「安装未知应用」开关（API 26+），
+      那个开关默认关闭，必须在拉起安装界面之前用
+      PackageManager.canRequestPackageInstalls() 查一下并引导用户去开，
+      否则系统会静默拦掉，用户以为「点了没反应」（见 ApkInstaller）。
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+
+    <!--
       v2.0：朗读的锁屏 / 通知栏控制要挂一个前台服务。
       Android 14（API 34）起必须同时声明服务类型对应的权限，否则 startForeground 直接抛异常。
     -->

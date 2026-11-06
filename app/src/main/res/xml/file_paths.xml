@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <cache-path name="share" path="share" />
+    <!--
+      v2.14：「检查更新」下载下来的 apk 放在 cacheDir/updates 里，
+      要交给系统安装器读取，所以必须在这里登记一个可暴露的路径。
+
+      ⚠️ 不给 `root-path` / `files-path`：暴露范围越小越好。
+      这里只放行「分享」和「更新包」两个目录。
+    -->
+    <cache-path name="updates" path="updates" />
 </paths>

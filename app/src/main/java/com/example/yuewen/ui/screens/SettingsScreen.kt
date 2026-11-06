@@ -96,6 +96,8 @@ import com.example.yuewen.ui.util.iconNameOf
 import com.example.yuewen.ui.util.rememberImeDismiss
 import com.example.yuewen.ui.util.titleOrDefault
 import com.example.yuewen.ui.viewmodel.SettingsViewModel
+import com.example.yuewen.ui.viewmodel.UpdateUiState
+import com.example.yuewen.ui.viewmodel.UpdateViewModel
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -829,6 +831,17 @@ fun SettingsScreen(
     val cs = MaterialTheme.colorScheme
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    /**
+     * v2.14：检查更新。
+     *
+     * 单独一个 ViewModel，不塞进 SettingsViewModel —— 它管的是「下载 / 调起系统安装器」
+     * 这条完全独立的链路（网络 + 文件 + 跨 App 跳转），和「读写设置」没有交集。
+     * 混在一起会让 SettingsViewModel 的职责变成「设置页上碰巧用到的所有东西」。
+     */
+    val updateVm: UpdateViewModel = viewModel(factory = UpdateViewModel.provide(app))
+    val updateVisible by updateVm.visible.collectAsStateWithLifecycle()
+    val updateState by updateVm.state.collectAsStateWithLifecycle()
 
     // 「添加」按钮敲完要收键盘，否则输入法会一直挡着下面那排关键词
     val dismissIme = rememberImeDismiss()
@@ -1797,6 +1810,14 @@ fun SettingsScreen(
                         onClick = onOpenGuide
                     )
                     Div()
+                    // v2.14：从 GitHub Releases 拉新版并调起系统安装器。
+                    // 放在「关于」上面：这一行是**动作**，下面是**信息**。
+                    SettingsRow(
+                        "检查更新",
+                        trailing = { UpdateTrailing(updateState) },
+                        onClick = { updateVm.open() }
+                    )
+                    Div()
                     SettingsRow(
                         "关于${titleOrDefault(appTitle)}",
                         trailing = { Text("v${BuildConfig.VERSION_NAME}", color = cs.onSurfaceVariant) },
@@ -1808,6 +1829,18 @@ fun SettingsScreen(
             //（父层不再压 padding，压了就穿不过去）。24dp 是原本的收尾留白，另加底栏高度。
             Spacer(Modifier.height(bottomInset + 24.dp))
         }
+    }
+
+    // ---------------- v2.14：检查更新 ----------------
+    if (updateVisible) {
+        UpdateDialog(
+            state = updateState,
+            currentVersion = updateVm.currentVersion,
+            onCheck = { updateVm.check() },
+            onDownload = { info -> updateVm.download(info) },
+            onInstallAgain = { updateVm.installAgain() },
+            onDismiss = { updateVm.dismiss() }
+        )
     }
 
     // ---------------- v2.0：备份 / 恢复 ----------------
@@ -2244,4 +2277,33 @@ private fun DavConfigDialog(
             TextButton(onClick = onDismiss) { Text("取消") }
         }
     )
+}
+
+/**
+ * 「检查更新」那一行右侧的状态文字（v2.14）。
+ *
+ * 为什么不显示成一行「版本号」：这一行是**动作**，右侧应当回答
+ * 「现在点下去会发生什么的预告」—— 有没有新版、下没下完。
+ * 当前版本号在「关于」那一行和更新对话框底部都有，不需要在这儿再说一遍。
+ *
+ * 颜色只分三档：**主色 = 有事可做**（有新版本 / 已下载待装）、
+ * 次级灰 = 无事可做、error = 出错了。别用更多档，否则整列颜色会花。
+ */
+@Composable
+private fun UpdateTrailing(state: UpdateUiState) {
+    val cs = MaterialTheme.colorScheme
+    val (text, color) = when (state) {
+        UpdateUiState.Idle -> "点一下查" to cs.onSurfaceVariant
+        UpdateUiState.Checking -> "检查中…" to cs.onSurfaceVariant
+        is UpdateUiState.Latest -> "已是最新" to cs.onSurfaceVariant
+        is UpdateUiState.Available -> "有新版本 v${state.info.versionName}" to cs.primary
+        is UpdateUiState.Downloading -> {
+            // 服务端没给总大小时（percent == null）不编一个百分比出来
+            val p = state.percent
+            (if (p == null) "下载中…" else "下载中 $p%") to cs.primary
+        }
+        is UpdateUiState.Ready -> "待安装 v${state.info.versionName}" to cs.primary
+        is UpdateUiState.Failed -> "检查失败" to cs.error
+    }
+    Text(text, color = color, style = MaterialTheme.typography.bodyMedium)
 }
