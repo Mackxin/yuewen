@@ -1,6 +1,7 @@
 package com.example.yuewen.data.update
 
 import com.example.yuewen.data.net.Http
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -8,7 +9,25 @@ import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLException
 import kotlin.coroutines.coroutineContext
+
+/**
+ * 一句**能直接显示给用户**的中文错误。
+ *
+ * 存在的理由：OkHttp 抛出来的原始信息（`timeout`、`failed to connect to
+ * api.github.com/... after 15000ms`）对普通用户等于没说。凡是这种「我们已经知道
+ * 是什么情况、并且想好了一句人话」的错误，都包成它；[friendlyError] 见到它就直接透传，
+ * 不再往上套一层「检查更新失败：…」。
+ *
+ * ⚠️ 别往里塞技术细节 —— 它的 message 会**原样出现在对话框里**。
+ */
+class UpdateException(message: String) : Exception(message)
 
 /**
  * 「从 GitHub 拉新版 APK」这条链路（v2.14）。
@@ -49,6 +68,24 @@ object UpdateChecker {
     private const val DIR_NAME = "updates"
 
     /**
+     * 下载专用的 OkHttpClient。
+     *
+     * ⚠️ **不能直接用 [Http.client]**：那个是给 RSS 抓取用的，把
+     * `callTimeout` 收紧到 25 秒（为了让某个挂住的源不拖住整次刷新）。
+     * 25 秒对「抓一个几十 KB 的 RSS」很宽松，对「下一个 4MB 的 apk」却是致命的 ——
+     * 实测在慢网下进度跑到 7% 就被掐断，用户看到的是「下载失败：timeout」。
+     *
+     * 这里用 `newBuilder()` 派生而不是新建一个：**连接池和线程池仍然共享**，
+     * 只是把三个超时放宽。`callTimeout(0)` 在 OkHttp 里表示「不限总时长」——
+     * 下载的结束条件应该是「传完了」，而不是「到点了」。
+     */
+    private val downloadClient = Http.client.newBuilder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)   // 卡住 60 秒没动静才算断
+        .callTimeout(0, TimeUnit.MILLISECONDS)
+        .build()
+
+    /**
      * 查最新版本。
      *
      * @param currentVersionName 当前装的版本，通常传 `BuildConfig.VERSION_NAME`
@@ -61,7 +98,7 @@ object UpdateChecker {
      */
     suspend fun fetchLatest(currentVersionName: String): Result<UpdateInfo?> =
         withContext(Dispatchers.IO) {
-            runCatching {
+            try {
                 val req = Request.Builder()
                     .url(API_LATEST)
                     .header("Accept", "application/vnd.github+json")
@@ -79,13 +116,36 @@ object UpdateChecker {
                             404 -> "仓库或发布页不存在"
                             else -> "GitHub 返回 HTTP ${resp.code}"
                         }
-                        error(why)
+                        throw UpdateException(why)
                     }
                     val body = resp.body?.string().orEmpty()
-                    parseLatest(body, currentVersionName)
+                    Result.success(parseLatest(body, currentVersionName))
                 }
+            } catch (e: Throwable) {
+                // 网络类的异常一律翻译成人话 —— 让用户看见 "timeout"
+                // 等于什么都没说（见 [friendlyError] 的注释）
+                if (e is CancellationException) throw e
+                Result.failure(UpdateException(friendlyError(e, "检查更新")))
             }
         }
+
+    /**
+     * 把异常翻成一句人话。
+     *
+     * @param doing 正在做的事（「检查更新」/「下载」），拼进句子里
+     */
+    private fun friendlyError(e: Throwable, doing: String): String {
+        // 我们自己抛的、已经写好中文的，原样透传（别套娃成「检查更新失败：GitHub 限流了…」）
+        if (e is UpdateException) return e.message ?: "$doing 失败"
+        return when (e) {
+            is SocketTimeoutException -> "$doing 超时了（网络太慢），点「重试」再来一次"
+            is UnknownHostException -> "$doing 失败：连不上 GitHub（域名解析不了），检查一下网络"
+            is ConnectException -> "$doing 失败：连不上 GitHub，检查一下网络或代理"
+            is SSLException -> "$doing 失败：安全连接建不起来（可能被代理拦截了）"
+            is IOException -> "$doing 失败：${e.message?.takeIf { it.isNotBlank() } ?: "网络不通"}"
+            else -> "$doing 失败：${e.message?.takeIf { it.isNotBlank() } ?: "未知错误"}"
+        }
+    }
 
     /**
      * 解析 `releases/latest` 的响应。
@@ -96,10 +156,10 @@ object UpdateChecker {
         val root = JSONObject(json)
         val tag = root.optString("tag_name").trim()
         val version = normalizeVersion(tag)
-        if (version.isBlank()) error("发布标签里读不出版本号：$tag")
+        if (version.isBlank()) throw UpdateException("发布标签里读不出版本号：$tag")
 
         val assets = root.optJSONArray("assets") ?: JSONArray()
-        val apk = pickApkAsset(assets, version) ?: error("这个版本没有附带 .apk 文件")
+        val apk = pickApkAsset(assets, version) ?: throw UpdateException("这个版本没有附带 .apk 文件")
 
         // 不比当前版本新 → 什么都不返回（调用方据此显示「已是最新」）
         if (compareVersion(version, currentVersionName) <= 0) return null
@@ -161,51 +221,65 @@ object UpdateChecker {
         info: UpdateInfo,
         onProgress: (Int) -> Unit = {}
     ): File = withContext(Dispatchers.IO) {
-        val dir = File(context.cacheDir, DIR_NAME).apply { mkdirs() }
-        // 清场：上一次下载的残留（同目录下的所有 apk）
-        dir.listFiles()?.forEach { if (it.isFile) it.delete() }
+        try {
+            val dir = File(context.cacheDir, DIR_NAME).apply { mkdirs() }
+            // 清场：上一次下载的残留（同目录下的所有 apk）
+            dir.listFiles()?.forEach { if (it.isFile) it.delete() }
 
-        val name = "yuewen-v${info.versionName}.apk"
-        val target = File(dir, name)
-        val tmp = File(dir, "$name.part")
+            val name = "yuewen-v${info.versionName}.apk"
+            val target = File(dir, name)
+            val tmp = File(dir, "$name.part")
 
-        val req = Request.Builder()
-            .url(info.downloadUrl)
-            .header("User-Agent", Http.UA_FEED)
-            .header("Accept", "application/octet-stream")
-            .build()
+            val req = Request.Builder()
+                .url(info.downloadUrl)
+                .header("User-Agent", Http.UA_FEED)
+                .header("Accept", "application/octet-stream")
+                .build()
 
-        Http.client.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) error("下载失败：HTTP ${resp.code}")
-            val body = resp.body ?: error("下载失败：响应是空的")
-            val total = body.contentLength()          // -1 = 服务端没告诉长度
-            var done = 0L
+            // ⚠️ 用 downloadClient（超时宽松），不是 Http.client —— 见 downloadClient 的注释
+            downloadClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) throw UpdateException("下载失败：GitHub 返回 HTTP ${resp.code}")
+                val body = resp.body ?: throw UpdateException("下载失败：服务端返回了空内容")
+                val total = body.contentLength()          // -1 = 服务端没告诉长度
+                var done = 0L
 
-            tmp.outputStream().use { out ->
-                body.byteStream().use { input ->
-                    val buf = ByteArray(64 * 1024)
-                    while (true) {
-                        // 用户点「取消」时协程会被 cancel，这里及时退出，
-                        // 否则会一直下到天荒地老
-                        coroutineContext.ensureActive()
-                        val n = input.read(buf)
-                        if (n <= 0) break
-                        out.write(buf, 0, n)
-                        done += n
-                        if (total > 0) {
-                            onProgress(((done * 100) / total).toInt().coerceIn(0, 100))
+                tmp.outputStream().use { out ->
+                    body.byteStream().use { input ->
+                        val buf = ByteArray(64 * 1024)
+                        while (true) {
+                            // 用户点「取消」时协程会被 cancel，这里及时退出，
+                            // 否则会一直下到天荒地老
+                            coroutineContext.ensureActive()
+                            val n = input.read(buf)
+                            if (n <= 0) break
+                            out.write(buf, 0, n)
+                            done += n
+                            if (total > 0) {
+                                onProgress(((done * 100) / total).toInt().coerceIn(0, 100))
+                            }
                         }
                     }
                 }
+                if (total > 0 && done < total) {
+                    throw UpdateException("下载不完整（只收到 $done/$total 字节），点重试再来一次")
+                }
             }
-            if (total > 0 && done < total) error("下载不完整（${done}/${total} 字节）")
-        }
 
-        // 先写 .part 再改名：中途失败/被杀时，目录里不会留一个「看起来完整」的半截 apk
-        if (target.exists()) target.delete()
-        if (!tmp.renameTo(target)) error("下载完了但存不下来（存储空间不足？）")
-        onProgress(100)
-        target
+            // 先写 .part 再改名：中途失败/被杀时，目录里不会留一个「看起来完整」的半截 apk
+            if (target.exists()) target.delete()
+            if (!tmp.renameTo(target)) {
+                throw UpdateException("下载完了但存不下来（可能是存储空间不足）")
+            }
+            onProgress(100)
+            target
+        } catch (e: Throwable) {
+            // 用户点「取消下载」→ 协程被取消，这不是错误，必须原样抛出去，
+            // 否则 UI 会把「我自己取消的」显示成一条红色报错
+            if (e is CancellationException) throw e
+            // 已经是给人看的中文了，别再套一层
+            if (e is UpdateException) throw e
+            throw UpdateException(friendlyError(e, "下载"))
+        }
     }
 
     /**
